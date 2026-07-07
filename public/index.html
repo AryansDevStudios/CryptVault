@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CryptVault | Secure File System</title>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Phosphor Icons -->
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="background-effects">
+        <div class="glow-orb orb-primary"></div>
+        <div class="glow-orb orb-secondary"></div>
+    </div>
+
+    <main class="app-container">
+        <!-- Login View -->
+        <section id="login-view" class="view-panel glass active-view">
+            <div class="login-header">
+                <div class="icon-circle icon-primary">
+                    <i class="ph ph-lock-key"></i>
+                </div>
+                <h1>CryptVault</h1>
+                <p>Enter your master password to decrypt the vault.</p>
+            </div>
+            
+            <form id="login-form" class="login-form">
+                <div class="input-group">
+                    <i class="ph ph-password input-icon"></i>
+                    <input type="password" id="password" required placeholder="Master Password" autofocus>
+                </div>
+                <button type="submit" class="btn btn-primary btn-full w-full">
+                    <span>Unlock Vault</span>
+                    <i class="ph ph-arrow-right"></i>
+                </button>
+                <div id="login-error" class="error-message hidden"></div>
+            </form>
+        </section>
+
+        <!-- Dashboard View -->
+        <section id="dashboard-view" class="view-panel dashboard hidden">
+            <!-- Header -->
+            <header class="dashboard-header glass">
+                <div class="brand">
+                    <div class="icon-square icon-primary">
+                        <i class="ph-fill ph-folder-lock"></i>
+                    </div>
+                    <div class="brand-info">
+                        <h2>CryptVault</h2>
+                        <nav id="breadcrumbs" class="breadcrumbs">
+                            <!-- Breadcrumbs injected here -->
+                            <span class="breadcrumb-item active" data-id="root">Vault Root</span>
+                        </nav>
+                    </div>
+                </div>
+                
+                <div class="header-actions">
+                    <button class="btn btn-secondary" onclick="app.openNewFolderModal()">
+                        <i class="ph ph-folder-plus text-primary"></i>
+                        <span class="btn-text">New Folder</span>
+                    </button>
+                    <button class="btn btn-secondary" onclick="document.getElementById('file-upload').click()">
+                        <i class="ph ph-file-plus text-success"></i>
+                        <span class="btn-text">Upload File</span>
+                    </button>
+                    <button class="btn btn-secondary" onclick="document.getElementById('folder-upload').click()">
+                        <i class="ph ph-folders text-secondary"></i>
+                        <span class="btn-text">Upload Folder</span>
+                    </button>
+                    <button id="logout-btn" class="btn btn-danger btn-icon" title="Logout">
+                        <i class="ph ph-sign-out"></i>
+                    </button>
+                </div>
+                
+                <!-- Hidden file inputs -->
+                <input type="file" id="file-upload" class="hidden" multiple>
+                <input type="file" id="folder-upload" class="hidden" webkitdirectory directory multiple>
+            </header>
+
+            <!-- Main File List Area -->
+            <div class="main-content glass relative">
+                
+                <!-- Upload Progress Overlay -->
+                <div id="upload-overlay" class="overlay hidden">
+                    <div class="upload-modal glass">
+                        <div class="icon-circle icon-primary pulse">
+                            <i class="ph ph-cloud-arrow-up"></i>
+                        </div>
+                        <h3 id="upload-title">Encrypting Files...</h3>
+                        <p id="upload-filename" class="text-muted">Processing...</p>
+                        
+                        <div class="progress-container">
+                            <div id="upload-bar" class="progress-bar">
+                                <div class="progress-bar-inner glow"></div>
+                            </div>
+                        </div>
+                        
+                        <div class="progress-stats">
+                            <span id="upload-progress-text">0 / 0 files</span>
+                            <span id="upload-percentage">0%</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- List Header -->
+                <div class="list-header">
+                    <div class="col-checkbox">
+                        <label class="custom-checkbox">
+                            <input type="checkbox" id="select-all" onclick="app.toggleSelectAll(this)">
+                            <span class="checkmark"></span>
+                        </label>
+                    </div>
+                    <div class="col-name">Name</div>
+                    <div class="col-size text-right">Size</div>
+                    <div class="col-date text-right">Date</div>
+                    <div class="col-action text-center">Action</div>
+                </div>
+                
+                <!-- File & Folder List -->
+                <div class="node-list" id="node-list">
+                    <!-- Nodes injected here via JS -->
+                    <div class="empty-state hidden" id="empty-state">
+                        <i class="ph-fill ph-folder-open text-muted"></i>
+                        <p>This folder is empty.</p>
+                    </div>
+                </div>
+                
+                <!-- Drag & Drop Overlay -->
+                <div id="dropzone" class="dropzone hidden">
+                    <i class="ph ph-upload-simple dropzone-icon"></i>
+                    <h3>Drop to Upload</h3>
+                    <p>Files and folders will be encrypted instantly.</p>
+                </div>
+                
+                <!-- Modern Floating Action Bar -->
+                <div id="floating-action-bar" class="floating-action-bar hidden glass">
+                    <div class="selected-count">
+                        <span id="bulk-count">0</span> selected
+                    </div>
+                    <div class="bulk-actions-buttons">
+                        <button class="btn btn-primary btn-sm" onclick="app.downloadSelected()">
+                            <i class="ph ph-download-simple"></i>
+                            <span class="btn-text">Download</span>
+                        </button>
+                        <button class="btn btn-danger btn-sm" onclick="app.deleteSelected()">
+                            <i class="ph ph-trash"></i>
+                            <span class="btn-text">Delete</span>
+                        </button>
+                        <button class="btn btn-icon text-muted" onclick="app.clearSelection()" title="Clear Selection">
+                            <i class="ph ph-x"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </section>
+        
+        <!-- Custom Modals -->
+        <div id="new-folder-modal" class="overlay hidden">
+            <div class="custom-modal glass">
+                <div class="modal-header">
+                    <h3>Create New Folder</h3>
+                    <button class="close-btn" onclick="app.closeModals()"><i class="ph ph-x"></i></button>
+                </div>
+                <div class="modal-body">
+                    <div class="input-group">
+                        <i class="ph-fill ph-folder input-icon"></i>
+                        <input type="text" id="new-folder-name" placeholder="Folder Name" autocomplete="off">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" onclick="app.closeModals()">Cancel</button>
+                    <button class="btn btn-primary" onclick="app.submitNewFolder()">Create Folder</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="confirm-modal" class="overlay hidden">
+            <div class="custom-modal glass">
+                <div class="modal-header">
+                    <h3>Confirm Action</h3>
+                    <button class="close-btn" onclick="app.closeModals()"><i class="ph ph-x"></i></button>
+                </div>
+                <div class="modal-body">
+                    <p id="confirm-message">Are you sure you want to proceed?</p>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" onclick="app.closeModals()">Cancel</button>
+                    <button id="confirm-btn" class="btn btn-danger">Confirm</button>
+                </div>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- Toast Notification -->
+    <div id="toast" class="toast hidden">
+        <i id="toast-icon" class="ph-fill ph-check-circle"></i>
+        <span id="toast-message"></span>
+    </div>
+
+    <!-- Application Logic -->
+    <script src="app.js"></script>
+</body>
+</html>
