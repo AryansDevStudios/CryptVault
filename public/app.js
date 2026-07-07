@@ -662,7 +662,20 @@ class CryptVaultApp {
             this.uploadOverlay.classList.add('hidden');
         }
     }
+
+    toggleDropdown(id, event) {
+        event.stopPropagation();
+        const el = document.getElementById(id);
+        const isHidden = el.classList.contains('hidden');
+        document.querySelectorAll('.dropdown-menu').forEach(m => m.classList.add('hidden'));
+        if (isHidden) el.classList.remove('hidden');
+    }
 }
+
+// Global click listener to close dropdowns
+document.addEventListener('click', () => {
+    document.querySelectorAll('.dropdown-menu').forEach(m => m.classList.add('hidden'));
+});
 
 // Initialize App
 const app = new CryptVaultApp();

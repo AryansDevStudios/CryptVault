@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>CryptVault | Secure File System</title>
+    <!-- Favicon -->
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🔒</text></svg>">
     <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -33,7 +35,7 @@
             <form id="login-form" class="login-form">
                 <div class="input-group">
                     <i class="ph ph-password input-icon"></i>
-                    <input type="password" id="password" required placeholder="Master Password" autofocus>
+                    <input type="password" id="password" required placeholder="Master Password" autocomplete="current-password" autofocus>
                 </div>
                 <button type="submit" class="btn btn-primary btn-full w-full">
                     <span>Unlock Vault</span>
@@ -61,18 +63,24 @@
                 </div>
                 
                 <div class="header-actions">
-                    <button class="btn btn-secondary" onclick="app.openNewFolderModal()">
-                        <i class="ph ph-folder-plus text-primary"></i>
-                        <span class="btn-text">New Folder</span>
-                    </button>
-                    <button class="btn btn-secondary" onclick="document.getElementById('file-upload').click()">
-                        <i class="ph ph-file-plus text-success"></i>
-                        <span class="btn-text">Upload File</span>
-                    </button>
-                    <button class="btn btn-secondary" onclick="document.getElementById('folder-upload').click()">
-                        <i class="ph ph-folders text-secondary"></i>
-                        <span class="btn-text">Upload Folder</span>
-                    </button>
+                    <div class="dropdown relative">
+                        <button class="btn btn-primary" onclick="app.toggleDropdown('new-menu', event)">
+                            <i class="ph ph-plus"></i>
+                            <span class="btn-text">New</span>
+                        </button>
+                        <div id="new-menu" class="dropdown-menu glass hidden">
+                            <button class="dropdown-item" onclick="app.openNewFolderModal()">
+                                <i class="ph-fill ph-folder-plus text-primary"></i> New Folder
+                            </button>
+                            <div class="dropdown-divider"></div>
+                            <button class="dropdown-item" onclick="document.getElementById('file-upload').click()">
+                                <i class="ph-fill ph-file-plus text-success"></i> File Upload
+                            </button>
+                            <button class="dropdown-item" onclick="document.getElementById('folder-upload').click()">
+                                <i class="ph-fill ph-folders text-secondary"></i> Folder Upload
+                            </button>
+                        </div>
+                    </div>
                     <button id="logout-btn" class="btn btn-danger btn-icon" title="Logout">
                         <i class="ph ph-sign-out"></i>
                     </button>
