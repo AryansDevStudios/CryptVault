@@ -275,9 +275,26 @@
                     <div class="settings-section mb-4">
                         <h4 class="text-primary mb-2">General</h4>
                         <label for="setting-max-upload" class="block mb-1">Maximum Upload Size (MB)</label>
-                        <div class="input-group">
+                        <div class="input-group mb-3">
                             <i class="ph-fill ph-hard-drives input-icon"></i>
                             <input type="number" id="setting-max-upload" placeholder="5120" min="1" step="1" autocomplete="off">
+                        </div>
+                        
+                        <div class="flex gap-4">
+                            <div class="flex-1">
+                                <label for="setting-parallel-uploads" class="block mb-1">Parallel Uploads</label>
+                                <div class="input-group">
+                                    <i class="ph-fill ph-stack input-icon"></i>
+                                    <input type="number" id="setting-parallel-uploads" placeholder="3" min="1" max="20" step="1" autocomplete="off">
+                                </div>
+                            </div>
+                            <div class="flex-1">
+                                <label for="setting-network-timeout" class="block mb-1">Network Timeout (s)</label>
+                                <div class="input-group">
+                                    <i class="ph-fill ph-hourglass input-icon"></i>
+                                    <input type="number" id="setting-network-timeout" placeholder="0 (Infinite)" min="0" step="1" autocomplete="off">
+                                </div>
+                            </div>
                         </div>
                     </div>
                     
@@ -358,9 +375,12 @@
                         </form>
                     </div>
                 </div>
-                <div class="modal-footer">
-                    <button class="btn btn-secondary modal-close">Cancel</button>
-                    <button class="btn btn-primary" id="btn-save-settings">Save Settings</button>
+                <div class="modal-footer flex justify-between">
+                    <button class="btn btn-secondary text-danger" id="btn-reset-settings" title="Resets general settings back to factory defaults.">Reset to Defaults</button>
+                    <div class="flex gap-2">
+                        <button class="btn btn-secondary modal-close">Cancel</button>
+                        <button class="btn btn-primary" id="btn-save-settings">Save Settings</button>
+                    </div>
                 </div>
             </div>
         </div>

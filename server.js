@@ -67,7 +67,9 @@ class ManifestManager {
         nodes["root"] = { type: "folder", name: "Vault Root", parentId: null, children: [] };
         return {
             settings: {
-                maxUploadSize: 5 * 1024 * 1024 * 1024 // 5 GB
+                maxUploadSize: 5 * 1024 * 1024 * 1024, // 5 GB
+                parallelUploads: 3,
+                networkTimeout: 0
             },
             nodes: nodes
         };
@@ -101,7 +103,10 @@ class ManifestManager {
             parsed.nodes = Object.assign(Object.create(null), parsed.nodes);
             
             if (!parsed.settings) {
-                parsed.settings = { maxUploadSize: 5 * 1024 * 1024 * 1024 };
+                parsed.settings = { maxUploadSize: 5 * 1024 * 1024 * 1024, parallelUploads: 3, networkTimeout: 0 };
+            } else {
+                if (typeof parsed.settings.parallelUploads === 'undefined') parsed.settings.parallelUploads = 3;
+                if (typeof parsed.settings.networkTimeout === 'undefined') parsed.settings.networkTimeout = 0;
             }
 
             this.cache = parsed;
@@ -465,18 +470,41 @@ app.get('/api/settings', authMiddleware, async (req, res) => {
 
 app.post('/api/settings', authMiddleware, async (req, res) => {
     try {
-        const { maxUploadSize } = req.body;
+        const { maxUploadSize, parallelUploads, networkTimeout } = req.body;
         if (!maxUploadSize || typeof maxUploadSize !== 'number') {
-            return res.status(400).json({ error: 'Invalid settings' });
+            return res.status(400).json({ error: 'Invalid maxUploadSize' });
         }
         
         const manifest = await manifestManager.load(req.encryptionKey);
         manifest.settings.maxUploadSize = maxUploadSize;
+        
+        if (typeof parallelUploads === 'number' && parallelUploads > 0) {
+            manifest.settings.parallelUploads = parallelUploads;
+        }
+        if (typeof networkTimeout === 'number' && networkTimeout >= 0) {
+            manifest.settings.networkTimeout = networkTimeout;
+        }
+        
         await manifestManager.save(req.encryptionKey);
         
         res.json({ success: true, settings: manifest.settings });
     } catch (err) {
         res.status(500).json({ error: 'Failed to save settings' });
+    }
+});
+
+app.post('/api/settings/reset', authMiddleware, async (req, res) => {
+    try {
+        const manifest = await manifestManager.load(req.encryptionKey);
+        manifest.settings = {
+            maxUploadSize: 5 * 1024 * 1024 * 1024,
+            parallelUploads: 3,
+            networkTimeout: 0
+        };
+        await manifestManager.save(req.encryptionKey);
+        res.json({ success: true, settings: manifest.settings });
+    } catch (err) {
+        res.status(500).json({ error: 'Failed to reset settings' });
     }
 });
 

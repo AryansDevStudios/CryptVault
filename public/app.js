@@ -140,6 +140,8 @@ class CryptVaultApp {
         
         document.getElementById('btn-restart-server').addEventListener('click', () => this.triggerRestart());
         document.getElementById('btn-save-settings').addEventListener('click', () => this.saveSettings());
+        const resetBtn = document.getElementById('btn-reset-settings');
+        if (resetBtn) resetBtn.addEventListener('click', () => this.resetSettings());
         
         // Dashboard Header Buttons
         document.getElementById('btn-new-menu').addEventListener('click', (e) => this.toggleDropdown('new-menu', e));
@@ -504,7 +506,24 @@ class CryptVaultApp {
             this.renderNodes(data.children);
             
         } catch (error) {
-            this.showToast('Error loading folder', 'error');
+            this.showToast('Server connection error', 'error');
+        }
+    }
+    
+    async resetSettings() {
+        if (!confirm("Are you sure you want to reset all general settings back to factory defaults?")) return;
+        try {
+            const res = await this.authFetch('/api/settings/reset', { method: 'POST' });
+            const data = await res.json();
+            if (data.success) {
+                this.settings = data.settings;
+                this.showToast('Settings reset to defaults', 'success');
+                this.closeModals();
+            } else {
+                this.showToast(data.error || 'Failed to reset settings', 'error');
+            }
+        } catch (e) {
+            this.showToast('Server connection error', 'error');
         }
     }
 
@@ -727,6 +746,12 @@ class CryptVaultApp {
         const mbSize = Math.floor(this.settings.maxUploadSize / (1024 * 1024));
         this.settingMaxUpload.value = mbSize;
         
+        const parallelInput = document.getElementById('setting-parallel-uploads');
+        if (parallelInput) parallelInput.value = this.settings.parallelUploads || 3;
+        
+        const timeoutInput = document.getElementById('setting-network-timeout');
+        if (timeoutInput) timeoutInput.value = this.settings.networkTimeout || 0;
+        
         const previewCheckbox = document.getElementById('setting-enable-preview');
         if (previewCheckbox) {
             previewCheckbox.checked = localStorage.getItem('enablePreview') === 'true';
@@ -781,6 +806,12 @@ class CryptVaultApp {
         }
         const bytes = mbSize * 1024 * 1024;
         
+        const parallelInput = document.getElementById('setting-parallel-uploads');
+        const parallelUploads = parallelInput ? parseInt(parallelInput.value, 10) : 3;
+        
+        const timeoutInput = document.getElementById('setting-network-timeout');
+        const networkTimeout = timeoutInput ? parseInt(timeoutInput.value, 10) : 0;
+        
         const previewCheckbox = document.getElementById('setting-enable-preview');
         if (previewCheckbox) {
             localStorage.setItem('enablePreview', previewCheckbox.checked);
@@ -790,7 +821,7 @@ class CryptVaultApp {
             const res = await this.authFetch('/api/settings', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ maxUploadSize: bytes })
+                body: JSON.stringify({ maxUploadSize: bytes, parallelUploads, networkTimeout })
             });
             const data = await res.json();
             if (data.success) {
@@ -1223,7 +1254,7 @@ class CryptVaultApp {
         
         updateProgress();
         
-        const concurrency = 3;
+        const concurrency = (this.settings && this.settings.parallelUploads > 0) ? this.settings.parallelUploads : 3;
         let index = 0;
         
         const worker = async () => {
@@ -1408,6 +1439,9 @@ class CryptVaultApp {
             
             const xhr = new XMLHttpRequest();
             xhr.open('POST', '/api/upload', true);
+            if (this.settings && this.settings.networkTimeout > 0) {
+                xhr.timeout = this.settings.networkTimeout * 1000;
+            }
             xhr.setRequestHeader('Authorization', `Bearer ${this.token}`);
             
             xhr.onload = () => {
