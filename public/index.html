@@ -35,6 +35,27 @@
             </div>
             
             <form id="setup-form" class="login-form">
+                <div class="mb-4 text-left">
+                    <label class="block mb-2 text-primary font-medium">Deployment Environment</label>
+                    <div class="flex gap-4 mb-2">
+                        <label class="flex-1 border border-primary/30 p-3 rounded cursor-pointer hover:bg-primary/10 transition flex items-start">
+                            <input type="radio" name="deploy_env" value="local" class="mt-1 mr-2" checked>
+                            <div>
+                                <span class="font-medium block text-sm">Personal / Local Use</span>
+                                <p class="text-xs text-muted mt-1 leading-snug">Binds to 127.0.0.1. Most secure. Only accessible from this machine.</p>
+                            </div>
+                        </label>
+                        <label class="flex-1 border border-primary/30 p-3 rounded cursor-pointer hover:bg-primary/10 transition flex items-start">
+                            <input type="radio" name="deploy_env" value="server" class="mt-1 mr-2">
+                            <div>
+                                <span class="font-medium block text-sm">Deployed Server</span>
+                                <p class="text-xs text-muted mt-1 leading-snug">Binds to 0.0.0.0. Necessary for Render, Heroku, or Docker.</p>
+                            </div>
+                        </label>
+                    </div>
+                    <p class="text-xs text-muted text-center italic">You can always change this later in Settings > Network.</p>
+                </div>
+
                 <div class="input-group">
                     <i class="ph ph-lock-key input-icon"></i>
                     <input type="password" id="setup-password" required placeholder="New Master Password" autocomplete="new-password" autofocus>

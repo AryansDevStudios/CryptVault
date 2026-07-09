@@ -10,6 +10,12 @@ yarn-error.log*
 config.json
 manifest.enc
 
+# TLS certificates and private keys
+tls/
+
+# Auto-generated client-side libraries (copied by postinstall)
+public/lib/
+
 # Logs
 logs/
 audit.log

@@ -13,8 +13,8 @@ const { logAudit } = require('./logger');
 
 const app = express();
 
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: '1mb' }));
+app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 
 const helmet = require('helmet');
 
@@ -36,7 +36,7 @@ app.use(helmet({
     frameguard: {
         action: 'deny'
     },
-    hsts: false
+    hsts: (globalConfig.network && globalConfig.network.tls && globalConfig.network.tls.enabled) ? { maxAge: 31536000, includeSubDomains: true } : false
 }));
 
 app.use(express.static(path.join(__dirname, 'public')));
@@ -52,6 +52,7 @@ const MANIFEST_FILE = path.join(UPLOADS_DIR, 'manifest.enc');
 const sessions = new Map(); // token -> { derivedKey, expiresAt }
 const downloadTickets = new Map(); // ticketId -> { derivedKey, expiresAt }
 let activeTransfers = 0; // tracking for safe restarts
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // Manifest Manager to prevent race conditions during concurrent requests
 class ManifestManager {
@@ -281,7 +282,7 @@ const CONFIG_PATH = path.join(__dirname, 'config.json');
 let globalConfig = {
     network: {
         port: 3000,
-        host: "127.0.0.1",
+        host: "0.0.0.0",
         trustProxy: false,
         tls: { enabled: false, certPath: "", keyPath: "" }
     },
@@ -312,7 +313,9 @@ function saveConfig(updates) {
     if (updates.network) {
         globalConfig.network = { ...globalConfig.network, ...updates.network };
     }
-    fs.writeFileSync(CONFIG_PATH, JSON.stringify(globalConfig, null, 2), 'utf8');
+    const tempConfigPath = CONFIG_PATH + '.tmp';
+    fs.writeFileSync(tempConfigPath, JSON.stringify(globalConfig, null, 2), 'utf8');
+    fs.renameSync(tempConfigPath, CONFIG_PATH);
 }
 
 function checkPasswordStrength(password) {
@@ -322,6 +325,23 @@ function checkPasswordStrength(password) {
     if (!/[0-9]/.test(password)) return 'Password must contain at least one number.';
     if (!/[^A-Za-z0-9]/.test(password)) return 'Password must contain at least one special character.';
     return null;
+}
+
+function validateNodeName(name) {
+    if (!name || typeof name !== 'string') return 'Name is required';
+    const trimmed = name.trim();
+    if (trimmed.length === 0) return 'Name cannot be empty';
+    if (trimmed.length > 255) return 'Name too long (max 255 characters)';
+    if (/[\x00-\x1f\/\\<>:"|?*]/.test(trimmed)) return 'Name contains invalid characters';
+    if (trimmed === '.' || trimmed === '..') return 'Invalid name';
+    return null;
+}
+
+function safeFilePath(uuid) {
+    if (!UUID_REGEX.test(uuid)) return null;
+    const resolved = path.resolve(UPLOADS_DIR, uuid);
+    if (!resolved.startsWith(path.resolve(UPLOADS_DIR) + path.sep)) return null;
+    return resolved;
 }
 
 // --- Routes ---
@@ -336,12 +356,15 @@ app.post('/api/setup', async (req, res) => {
     }
     
     try {
-        const { password } = req.body;
+        const { password, deployEnv } = req.body;
+        if (!password || typeof password !== 'string') {
+            return res.status(400).json({ error: 'Password is required' });
+        }
         const strengthError = checkPasswordStrength(password);
         if (strengthError) return res.status(400).json({ error: strengthError });
         
         const preHashed = crypto.createHash('sha256').update(password).digest('hex');
-        const hash = await bcrypt.hash(preHashed, 10);
+        const hash = await bcrypt.hash(preHashed, 12);
         const currentDEK = crypto.randomBytes(32);
         
         const salt = crypto.randomBytes(32).toString('hex');
@@ -361,10 +384,13 @@ app.post('/api/setup', async (req, res) => {
                 encryptedDek: encryptedDEK.toString('hex'),
                 dekIv: iv.toString('hex'),
                 dekAuthTag: authTag.toString('hex')
+            },
+            network: {
+                host: deployEnv === 'local' ? '127.0.0.1' : '0.0.0.0'
             }
         });
         
-        const token = crypto.randomUUID();
+        const token = crypto.randomBytes(32).toString('hex');
         sessions.set(token, {
             derivedKey: currentDEK.toString('hex'),
             createdAt: Date.now(),
@@ -378,6 +404,11 @@ app.post('/api/setup', async (req, res) => {
         logAudit('VAULT_SETUP', req.ip);
         
         res.json({ success: true, token });
+        
+        // Asynchronously restart server if the host changed to bind correctly.
+        setTimeout(() => {
+            restartServer().catch(err => console.error("Auto-restart failed:", err));
+        }, 1000);
     } catch (err) {
         console.error("Setup error:", err);
         res.status(500).json({ error: 'Failed to complete setup' });
@@ -402,6 +433,9 @@ const ipLoginLimiter = rateLimit({
 app.post('/api/login', globalLoginLimiter, ipLoginLimiter, async (req, res) => {
     try {
         const { password } = req.body;
+        if (!password || typeof password !== 'string') {
+            return res.status(400).json({ error: 'Password is required' });
+        }
         
         // Use async bcrypt
         const preHashed = crypto.createHash('sha256').update(password).digest('hex');
@@ -428,7 +462,7 @@ app.post('/api/login', globalLoginLimiter, ipLoginLimiter, async (req, res) => {
                 finalDEKHex = kek.toString('hex');
             }
             
-            const token = crypto.randomUUID();
+            const token = crypto.randomBytes(32).toString('hex');
             sessions.set(token, {
                 derivedKey: finalDEKHex,
                 createdAt: Date.now(),
@@ -548,8 +582,8 @@ app.post('/api/settings/network', authMiddleware, tlsUpload, (req, res) => {
                 tlsCertPath = path.join(tlsDir, 'server.crt');
                 tlsKeyPath = path.join(tlsDir, 'server.key');
                 
-                fs.writeFileSync(tlsCertPath, certBuffer);
-                fs.writeFileSync(tlsKeyPath, keyBuffer);
+                fs.writeFileSync(tlsCertPath, certBuffer, { mode: 0o644 });
+                fs.writeFileSync(tlsKeyPath, keyBuffer, { mode: 0o600 });
             } else if (!tlsCertPath || !tlsKeyPath || !fs.existsSync(tlsCertPath) || !fs.existsSync(tlsKeyPath)) {
                 return res.status(400).json({ error: 'TLS enabled but certificates are missing or invalid' });
             }
@@ -618,7 +652,7 @@ app.post('/api/settings/password', authMiddleware, async (req, res) => {
         const currentDEK = Buffer.from(req.encryptionKey, 'hex');
         
         const newPreHashed = crypto.createHash('sha256').update(newPassword).digest('hex');
-        const hash = await bcrypt.hash(newPreHashed, 10);
+        const hash = await bcrypt.hash(newPreHashed, 12);
         
         const salt = crypto.randomBytes(32).toString('hex');
         const scryptN = 131072;
@@ -730,6 +764,9 @@ app.get('/api/nodes/:parentId', async (req, res) => {
 app.post('/api/folders', async (req, res) => {
     try {
         const { name, parentId } = req.body;
+        const nameError = validateNodeName(name);
+        if (nameError) return res.status(400).json({ error: nameError });
+        
         const manifest = await manifestManager.load(req.encryptionKey);
         
         if (!manifest.nodes[parentId] || manifest.nodes[parentId].type !== 'folder') {
@@ -797,6 +834,11 @@ app.post('/api/upload', (req, res, next) => {
 
         const { filename: uuid } = req.file;
         const originalname = req.body.originalname || req.file.originalname;
+        const nameError = validateNodeName(originalname);
+        if (nameError) {
+            await fsPromises.unlink(req.file.path).catch(() => {});
+            return res.status(400).json({ error: 'Invalid filename: ' + nameError });
+        }
         const stat = await fsPromises.stat(req.file.path);
 
         const baseParentId = req.body.parentId || 'root';
@@ -834,12 +876,18 @@ app.get('/api/download/:uuid', ticketAuth, async (req, res) => {
     
     try {
         const { uuid } = req.params;
+        const filePath = safeFilePath(uuid);
+        if (!filePath) return res.status(400).json({ error: 'Invalid file ID' });
+        
+        // Validate ticket scope if UUIDs were specified
+        if (req.ticketData.uuids && req.ticketData.uuids.length > 0 && !req.ticketData.uuids.includes(uuid)) {
+            return res.status(403).json({ error: 'Ticket not valid for this file' });
+        }
+        
         const manifest = await manifestManager.load(req.encryptionKey);
         const node = manifest.nodes[uuid];
 
         if (!node || node.type !== 'file') return res.status(404).json({ error: 'File not found' });
-
-        const filePath = path.join(UPLOADS_DIR, uuid);
         
         try {
             await fsPromises.access(filePath);
@@ -861,6 +909,8 @@ app.get('/api/download/:uuid', ticketAuth, async (req, res) => {
 app.get('/api/download-folder/:uuid', ticketAuth, async (req, res) => {
     try {
         const { uuid } = req.params;
+        if (!UUID_REGEX.test(uuid)) return res.status(400).json({ error: 'Invalid folder ID' });
+        
         const manifest = await manifestManager.load(req.encryptionKey);
         const folderNode = manifest.nodes[uuid];
         
@@ -887,7 +937,8 @@ app.get('/api/download-folder/:uuid', ticketAuth, async (req, res) => {
                 if (childNode.type === 'folder') {
                     await appendFolderToArchive(childId, `${currentPath}${childNode.name}/`);
                 } else {
-                    const filePath = path.join(UPLOADS_DIR, childId);
+                    const filePath = safeFilePath(childId);
+                    if (!filePath) continue;
                     try {
                         await fsPromises.access(filePath);
                         const pt = new PassThrough();
@@ -941,7 +992,8 @@ app.get('/api/download-multiple', ticketAuth, async (req, res) => {
                 if (childNode.type === 'folder') {
                     await appendFolderToArchive(childId, `${currentPath}${childNode.name}/`);
                 } else {
-                    const filePath = path.join(UPLOADS_DIR, childId);
+                    const filePath = safeFilePath(childId);
+                    if (!filePath) continue;
                     try {
                         await fsPromises.access(filePath);
                         const pt = new PassThrough();
@@ -964,7 +1016,8 @@ app.get('/api/download-multiple', ticketAuth, async (req, res) => {
             if (node.type === 'folder') {
                 await appendFolderToArchive(uuid, `${node.name}/`);
             } else {
-                const filePath = path.join(UPLOADS_DIR, uuid);
+                const filePath = safeFilePath(uuid);
+                if (!filePath) continue;
                 try {
                     await fsPromises.access(filePath);
                     const pt = new PassThrough();
@@ -989,6 +1042,8 @@ app.get('/api/download-multiple', ticketAuth, async (req, res) => {
 app.delete('/api/nodes/:uuid', async (req, res) => {
     try {
         const { uuid } = req.params;
+        if (!UUID_REGEX.test(uuid)) return res.status(400).json({ error: 'Invalid ID' });
+        
         const manifest = await manifestManager.load(req.encryptionKey);
         
         if (!manifest.nodes[uuid] || uuid === 'root') {
@@ -1004,7 +1059,8 @@ app.delete('/api/nodes/:uuid', async (req, res) => {
             if (node.type === 'folder') {
                 [...node.children].forEach(childId => gatherDeletions(childId));
             } else {
-                filesToDelete.push(path.join(UPLOADS_DIR, nodeId));
+                const safePath = safeFilePath(nodeId);
+                if (safePath) filesToDelete.push(safePath);
             }
             delete manifest.nodes[nodeId];
         }

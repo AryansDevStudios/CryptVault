@@ -1,7 +1,6 @@
 const crypto = require('crypto');
 const fs = require('fs');
-const os = require('os');
-const path = require('path');
+
 const { promises: fsPromises } = fs;
 
 const ALGORITHM = 'aes-256-gcm';
@@ -99,7 +98,7 @@ const decryptStream = async (inputFilePath, writeStream, keyString) => {
         const { bytesRead: tagRead } = await fileHandle.read(authTag, 0, AUTH_TAG_LENGTH, fileSize - AUTH_TAG_LENGTH);
         if (tagRead !== AUTH_TAG_LENGTH) throw new Error("Partial read on Auth Tag");
 
-        // We can close the handle now, as we'll use fs.createReadStream for the payload
+        // Close handle — we'll use createReadStream for the payload
         await fileHandle.close();
         fileHandle = null;
 
@@ -107,21 +106,18 @@ const decryptStream = async (inputFilePath, writeStream, keyString) => {
         decipher.setAuthTag(authTag);
 
         return new Promise((resolve, reject) => {
-            const tempFilePath = path.join(os.tmpdir(), `decrypt-${crypto.randomBytes(16).toString('hex')}.tmp`);
-            const tempWriteStream = fs.createWriteStream(tempFilePath);
             let hasError = false;
 
             const cleanup = (err) => {
                 if (hasError) return;
                 hasError = true;
                 readStream.destroy();
-                tempWriteStream.destroy();
-                fs.unlink(tempFilePath, () => {});
                 reject(err);
             };
 
             let readStream;
             if (fileSize === IV_LENGTH + AUTH_TAG_LENGTH) {
+                // Empty file — no encrypted payload
                 const { Readable } = require('stream');
                 readStream = Readable.from(Buffer.alloc(0));
             } else {
@@ -131,39 +127,16 @@ const decryptStream = async (inputFilePath, writeStream, keyString) => {
                 });
             }
 
-            readStream.pipe(decipher).pipe(tempWriteStream);
+            // Pipe directly: encrypted file → decipher → output stream (no temp file)
+            readStream.pipe(decipher).pipe(writeStream);
 
-            tempWriteStream.on('finish', () => {
-                if (hasError) return;
-                
-                const tempReadStream = fs.createReadStream(tempFilePath);
-                
-                const finalCleanup = (err) => {
-                    if (hasError) return;
-                    hasError = true;
-                    tempReadStream.destroy();
-                    writeStream.destroy();
-                    fs.unlink(tempFilePath, () => {});
-                    if (err) reject(err);
-                };
-
-                tempReadStream.on('error', finalCleanup);
-                writeStream.on('error', finalCleanup);
-
-                tempReadStream.on('end', () => {
-                    fs.unlink(tempFilePath, () => {});
-                });
-
-                writeStream.on('finish', () => {
-                    if (!hasError) resolve();
-                });
-
-                tempReadStream.pipe(writeStream);
+            writeStream.on('finish', () => {
+                if (!hasError) resolve();
             });
 
             readStream.on('error', cleanup);
             decipher.on('error', cleanup);
-            tempWriteStream.on('error', cleanup);
+            writeStream.on('error', cleanup);
         });
     } catch (error) {
         if (fileHandle) {

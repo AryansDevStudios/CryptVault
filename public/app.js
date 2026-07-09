@@ -726,9 +726,23 @@ class CryptVaultApp {
                         
                         const statusIndicator = document.getElementById('tls-status-indicator');
                         if (data.network.tls.certPath && data.network.tls.keyPath) {
-                            statusIndicator.innerHTML = '<span class="text-success"><i class="ph-fill ph-check-circle"></i> TLS Certificates are currently configured and valid.</span>';
+                            statusIndicator.textContent = '';
+                            const tlsSpan = document.createElement('span');
+                            tlsSpan.className = 'text-success';
+                            const tlsIcon = document.createElement('i');
+                            tlsIcon.className = 'ph-fill ph-check-circle';
+                            tlsSpan.appendChild(tlsIcon);
+                            tlsSpan.appendChild(document.createTextNode(' TLS Certificates are currently configured and valid.'));
+                            statusIndicator.appendChild(tlsSpan);
                         } else {
-                            statusIndicator.innerHTML = '<span class="text-muted"><i class="ph ph-info"></i> TLS is not configured.</span>';
+                            statusIndicator.textContent = '';
+                            const tlsSpan = document.createElement('span');
+                            tlsSpan.className = 'text-muted';
+                            const tlsIcon = document.createElement('i');
+                            tlsIcon.className = 'ph ph-info';
+                            tlsSpan.appendChild(tlsIcon);
+                            tlsSpan.appendChild(document.createTextNode(' TLS is not configured.'));
+                            statusIndicator.appendChild(tlsSpan);
                         }
                         
                         document.getElementById('setting-tls-cert').value = '';
@@ -889,7 +903,16 @@ class CryptVaultApp {
             if (data.success) {
                 this.showToast('Server restarting. Reconnecting...', 'success');
                 setTimeout(() => {
-                    window.location.href = data.newUrl;
+                    try {
+                        const newUrl = new URL(data.newUrl, window.location.origin);
+                        if (newUrl.origin === window.location.origin) {
+                            window.location.href = newUrl.href;
+                        } else {
+                            this.showToast('Server returned an invalid redirect URL', 'error');
+                        }
+                    } catch (e) {
+                        window.location.href = '/';
+                    }
                 }, 2000);
             } else {
                 this.showToast('Restart failed: ' + (data.error || 'Unknown'), 'error');
@@ -926,6 +949,11 @@ class CryptVaultApp {
         document.getElementById('preview-pane').classList.add('hidden');
         document.getElementById('dashboard-view').classList.remove('preview-open');
         this.currentPreviewId = null;
+        // Revoke any blob URLs to free memory
+        if (this._currentBlobUrl) {
+            URL.revokeObjectURL(this._currentBlobUrl);
+            this._currentBlobUrl = null;
+        }
     }
 
     async previewFile(uuid) {
@@ -961,12 +989,25 @@ class CryptVaultApp {
         title.title = node.name;
         
         if (node.size > 50 * 1024 * 1024) {
-            content.innerHTML = `<i class="ph ph-file-dashed text-4xl mb-2 text-warning"></i><p>File is too large to preview (>50MB).</p>`;
+            content.textContent = '';
+            const warnIcon = document.createElement('i');
+            warnIcon.className = 'ph ph-file-dashed text-4xl mb-2 text-warning';
+            const warnMsg = document.createElement('p');
+            warnMsg.textContent = 'File is too large to preview (>50MB).';
+            content.appendChild(warnIcon);
+            content.appendChild(warnMsg);
             content.classList.add('empty');
             return;
         }
         
-        content.innerHTML = `<i class="ph ph-spinner-gap text-4xl mb-2 text-primary" style="animation: spin 1s linear infinite;"></i><p>Loading preview...</p>`;
+        content.textContent = '';
+        const spinnerIcon = document.createElement('i');
+        spinnerIcon.className = 'ph ph-spinner-gap text-4xl mb-2 text-primary';
+        spinnerIcon.style.animation = 'spin 1s linear infinite';
+        const loadingMsg = document.createElement('p');
+        loadingMsg.textContent = 'Loading preview...';
+        content.appendChild(spinnerIcon);
+        content.appendChild(loadingMsg);
         content.classList.add('empty');
 
         try {
@@ -979,14 +1020,24 @@ class CryptVaultApp {
             
             // Image
             if (['jpg','jpeg','png','gif','webp','svg'].includes(ext)) {
-                content.innerHTML = `<img src="${url}" alt="Preview">`;
+                content.textContent = '';
+                const img = document.createElement('img');
+                img.src = url;
+                img.alt = 'Preview';
+                content.appendChild(img);
                 content.classList.remove('empty');
                 return;
             }
             
             // Video
             if (['mp4','webm','ogg'].includes(ext)) {
-                content.innerHTML = `<video src="${url}" controls autoplay loop></video>`;
+                content.textContent = '';
+                const video = document.createElement('video');
+                video.src = url;
+                video.controls = true;
+                video.autoplay = true;
+                video.loop = true;
+                content.appendChild(video);
                 content.classList.remove('empty');
                 return;
             }
@@ -998,7 +1049,12 @@ class CryptVaultApp {
             
             const blob = await fileRes.blob();
             if (this.currentPreviewId !== uuid) return;
+            // Revoke previous blob URL if any
+            if (this._currentBlobUrl) {
+                URL.revokeObjectURL(this._currentBlobUrl);
+            }
             const blobUrl = URL.createObjectURL(blob);
+            this._currentBlobUrl = blobUrl;
             
             // PDF
             if (ext === 'pdf') {
@@ -1027,7 +1083,13 @@ class CryptVaultApp {
                     }
                 } catch (e) {
                     if (this.currentPreviewId !== uuid) return;
-                    content.innerHTML = `<i class="ph ph-warning text-4xl mb-2 text-danger"></i><p>Failed to render PDF.</p>`;
+                    content.textContent = '';
+                    const pdfErrIcon = document.createElement('i');
+                    pdfErrIcon.className = 'ph ph-warning text-4xl mb-2 text-danger';
+                    const pdfErrMsg = document.createElement('p');
+                    pdfErrMsg.textContent = 'Failed to render PDF.';
+                    content.appendChild(pdfErrIcon);
+                    content.appendChild(pdfErrMsg);
                     content.classList.add('empty');
                 }
                 return;
@@ -1037,8 +1099,11 @@ class CryptVaultApp {
             if (ext === 'md' || ext === 'markdown') {
                 const text = await blob.text();
                 if (this.currentPreviewId !== uuid) return;
-                const dirtyHtml = marked.parse(text);
-                const cleanHtml = typeof DOMPurify !== 'undefined' ? DOMPurify.sanitize(dirtyHtml) : dirtyHtml;
+                if (typeof DOMPurify === 'undefined') {
+                    content.textContent = 'Preview unavailable: Security library not loaded.';
+                    return;
+                }
+                const cleanHtml = DOMPurify.sanitize(marked.parse(text));
                 content.innerHTML = `<div class="preview-markdown">${cleanHtml}</div>`;
                 content.classList.remove('empty');
                 return;
@@ -1057,14 +1122,22 @@ class CryptVaultApp {
                 // Text
                 const fullText = await blob.text();
                 if (this.currentPreviewId !== uuid) return;
-                const escapedText = fullText.replace(/</g, '&lt;').replace(/>/g, '&gt;');
-                const cleanText = typeof DOMPurify !== 'undefined' ? DOMPurify.sanitize(escapedText) : escapedText;
-                content.innerHTML = `<div class="preview-text">${cleanText}</div>`;
+                content.textContent = '';
+                const preDiv = document.createElement('div');
+                preDiv.className = 'preview-text';
+                preDiv.textContent = fullText;
+                content.appendChild(preDiv);
                 content.classList.remove('empty');
             }
 
         } catch (error) {
-            content.innerHTML = `<i class="ph ph-warning text-4xl mb-2 text-danger"></i><p>Failed to load preview.</p>`;
+            content.textContent = '';
+            const errIcon = document.createElement('i');
+            errIcon.className = 'ph ph-warning text-4xl mb-2 text-danger';
+            const errMsg = document.createElement('p');
+            errMsg.textContent = 'Failed to load preview.';
+            content.appendChild(errIcon);
+            content.appendChild(errMsg);
             content.classList.add('empty');
         }
     }
@@ -1089,7 +1162,7 @@ class CryptVaultApp {
             const res = await this.authFetch('/api/download-ticket', { method: 'POST' });
             const data = await res.json();
             if (data.ticket) {
-                document.cookie = `download_ticket=${data.ticket}; path=/api/download-folder/${uuid}; max-age=60; samesite=strict`;
+                document.cookie = `download_ticket=${data.ticket}; path=/api/download-folder/${uuid}; max-age=60; samesite=strict; secure`;
                 window.location.href = `/api/download-folder/${uuid}`;
                 this.showToast('Zipping and downloading folder...', 'success');
             } else {
@@ -1128,7 +1201,7 @@ class CryptVaultApp {
             });
             const data = await res.json();
             if (data.ticket) {
-                document.cookie = `download_ticket=${data.ticket}; path=/api/download-multiple; max-age=60; samesite=strict`;
+                document.cookie = `download_ticket=${data.ticket}; path=/api/download-multiple; max-age=60; samesite=strict; secure`;
                 window.location.href = `/api/download-multiple`;
                 this.showToast(`Zipping and downloading ${this.selectedNodes.size} items...`, 'success');
                 this.clearSelection();
@@ -1308,8 +1381,8 @@ class CryptVaultApp {
         const summaryErrorList = document.getElementById('summary-error-list');
         const summaryToggleIcon = document.getElementById('summary-toggle-icon');
 
-        summarySuccessList.innerHTML = '';
-        summaryErrorList.innerHTML = '';
+        summarySuccessList.textContent = '';
+        summaryErrorList.textContent = '';
         
         summarySuccessCount.textContent = `(${successfulFiles.length})`;
         summaryErrorCount.textContent = `(${failedFiles.length})`;
@@ -1349,7 +1422,7 @@ class CryptVaultApp {
     promptConflictResolution(conflicts) {
         return new Promise((resolve) => {
             this.conflictMessage.textContent = `${conflicts.length} file(s) have names that already exist in this folder.`;
-            this.conflictListContainer.innerHTML = '';
+            this.conflictListContainer.textContent = '';
             
             const selects = [];
             

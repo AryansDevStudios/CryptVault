@@ -2,15 +2,20 @@
   "name": "CryptVault",
   "version": "1.1.0",
   "description": "A zero-trust, encrypted file storage, with highest-grade security.",
-  "main": "index.js",
+  "main": "server.js",
   "engines": {
     "node": ">=18.0.0"
   },
   "scripts": {
+    "start": "node server.js",
     "test": "echo \"Error: no test specified\" && exit 1",
     "postinstall": "node setup-libs.js"
   },
-  "keywords": [],
+  "keywords": ["encryption", "file-storage", "secure", "zero-trust", "nodejs", "aes-256-gcm", "self-hosted"],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/AryansDevStudios/CryptVault.git"
+  },
   "author": "Aryan Gupta",
   "license": "ISC",
   "type": "commonjs",
@@ -22,7 +27,6 @@
     "express": "^5.2.1",
     "express-rate-limit": "^8.5.2",
     "helmet": "^8.2.0",
-    "jsdom": "^29.1.1",
     "marked": "12.0.0",
     "multer": "^2.2.0",
     "pdfjs-dist": "3.11.174"
