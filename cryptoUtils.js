@@ -91,11 +91,13 @@ const decryptStream = async (inputFilePath, writeStream, keyString) => {
 
         // Read IV from the beginning (12 bytes)
         const iv = Buffer.alloc(IV_LENGTH);
-        await fileHandle.read(iv, 0, IV_LENGTH, 0);
+        const { bytesRead: ivRead } = await fileHandle.read(iv, 0, IV_LENGTH, 0);
+        if (ivRead !== IV_LENGTH) throw new Error("Partial read on IV");
 
         // Read Auth Tag from the end (16 bytes)
         const authTag = Buffer.alloc(AUTH_TAG_LENGTH);
-        await fileHandle.read(authTag, 0, AUTH_TAG_LENGTH, fileSize - AUTH_TAG_LENGTH);
+        const { bytesRead: tagRead } = await fileHandle.read(authTag, 0, AUTH_TAG_LENGTH, fileSize - AUTH_TAG_LENGTH);
+        if (tagRead !== AUTH_TAG_LENGTH) throw new Error("Partial read on Auth Tag");
 
         // We can close the handle now, as we'll use fs.createReadStream for the payload
         await fileHandle.close();
@@ -118,10 +120,16 @@ const decryptStream = async (inputFilePath, writeStream, keyString) => {
                 reject(err);
             };
 
-            const readStream = fs.createReadStream(inputFilePath, {
-                start: IV_LENGTH,
-                end: fileSize - AUTH_TAG_LENGTH - 1
-            });
+            let readStream;
+            if (fileSize === IV_LENGTH + AUTH_TAG_LENGTH) {
+                const { Readable } = require('stream');
+                readStream = Readable.from(Buffer.alloc(0));
+            } else {
+                readStream = fs.createReadStream(inputFilePath, {
+                    start: IV_LENGTH,
+                    end: fileSize - AUTH_TAG_LENGTH - 1
+                });
+            }
 
             readStream.pipe(decipher).pipe(tempWriteStream);
 

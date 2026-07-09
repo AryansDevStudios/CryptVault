@@ -1,3 +1,8 @@
+// Configure PDF.js worker
+if (typeof pdfjsLib !== 'undefined') {
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'lib/pdf.worker.min.js';
+}
+
 class CryptVaultApp {
     constructor() {
         // Core State
@@ -203,6 +208,31 @@ class CryptVaultApp {
             if (this.conflictApplyCallback) this.conflictApplyCallback();
         });
 
+        // Preview Pane
+        document.getElementById('btn-close-preview').addEventListener('click', () => {
+            this.closePreview();
+        });
+
+        // Mobile Long-Press Selection
+        let pressTimer;
+        this.nodeList.addEventListener('touchstart', (e) => {
+            const fileItem = e.target.closest('.file-item');
+            if (!fileItem) return;
+            pressTimer = window.setTimeout(() => {
+                document.body.classList.add('mobile-selection-active');
+                const checkbox = fileItem.querySelector('input[type="checkbox"]');
+                if (checkbox && !checkbox.checked) {
+                    checkbox.checked = true;
+                    this.toggleSelectNode(fileItem.dataset.id, checkbox);
+                }
+                if (navigator.vibrate) navigator.vibrate(50);
+            }, 600);
+        }, { passive: true });
+        
+        const clearTouchTimer = () => clearTimeout(pressTimer);
+        this.nodeList.addEventListener('touchend', clearTouchTimer);
+        this.nodeList.addEventListener('touchmove', clearTouchTimer);
+
         // Event Delegation for Node List (Solves UI uninteractability)
         this.nodeList.addEventListener('click', (e) => {
             const fileItem = e.target.closest('.file-item');
@@ -234,9 +264,11 @@ class CryptVaultApp {
                 return;
             }
 
-            // Clicking the row (open folder)
+            // Clicking the row
             if (type === 'folder') {
                 this.loadNodes(id);
+            } else if (type === 'file') {
+                this.previewFile(id);
             }
         });
 
@@ -477,22 +509,30 @@ class CryptVaultApp {
     }
 
     renderBreadcrumbs(breadcrumbs) {
-        this.breadcrumbsContainer.innerHTML = '';
-        breadcrumbs.forEach((crumb, index) => {
-            const span = document.createElement('span');
-            span.className = 'breadcrumb-item' + (index === breadcrumbs.length - 1 ? ' active' : '');
-            span.textContent = crumb.name;
-            span.onclick = () => this.loadNodes(crumb.id);
-            
-            this.breadcrumbsContainer.appendChild(span);
-            
-            if (index < breadcrumbs.length - 1) {
-                const sep = document.createElement('span');
-                sep.className = 'breadcrumb-separator mx-1 text-muted';
-                sep.innerHTML = '<i class="ph ph-caret-right"></i>';
-                this.breadcrumbsContainer.appendChild(sep);
-            }
-        });
+        const render = (crumbs) => {
+            this.breadcrumbsContainer.innerHTML = '';
+            crumbs.forEach((crumb, index) => {
+                const span = document.createElement('span');
+                span.className = 'breadcrumb-item' + (index === crumbs.length - 1 ? ' active' : '');
+                span.textContent = crumb.name;
+                if(crumb.id) span.onclick = () => this.loadNodes(crumb.id);
+                this.breadcrumbsContainer.appendChild(span);
+                if (index < crumbs.length - 1) {
+                    const sep = document.createElement('i');
+                    sep.className = 'ph ph-caret-right text-muted mx-1';
+                    this.breadcrumbsContainer.appendChild(sep);
+                }
+            });
+        };
+        render(breadcrumbs);
+        // Truncate if overflowing
+        if (this.breadcrumbsContainer.scrollWidth > this.breadcrumbsContainer.clientWidth && breadcrumbs.length > 2) {
+            const truncated = [
+                { name: '...', id: breadcrumbs[breadcrumbs.length - 2].id },
+                breadcrumbs[breadcrumbs.length - 1]
+            ];
+            render(truncated);
+        }
     }
 
     renderNodes(childrenObj) {
@@ -622,6 +662,7 @@ class CryptVaultApp {
             this.bulkCountText.textContent = this.selectedNodes.size;
         } else {
             this.bulkActionsBar.classList.add('hidden');
+            document.body.classList.remove('mobile-selection-active');
         }
     }
     
@@ -686,6 +727,11 @@ class CryptVaultApp {
         const mbSize = Math.floor(this.settings.maxUploadSize / (1024 * 1024));
         this.settingMaxUpload.value = mbSize;
         
+        const previewCheckbox = document.getElementById('setting-enable-preview');
+        if (previewCheckbox) {
+            previewCheckbox.checked = localStorage.getItem('enablePreview') === 'true';
+        }
+        
         this.settingsModal.classList.remove('hidden');
     }
 
@@ -734,6 +780,11 @@ class CryptVaultApp {
             return;
         }
         const bytes = mbSize * 1024 * 1024;
+        
+        const previewCheckbox = document.getElementById('setting-enable-preview');
+        if (previewCheckbox) {
+            localStorage.setItem('enablePreview', previewCheckbox.checked);
+        }
         
         try {
             const res = await this.authFetch('/api/settings', {
@@ -840,13 +891,159 @@ class CryptVaultApp {
         }
     }
 
+    closePreview() {
+        document.getElementById('preview-pane').classList.add('hidden');
+        document.getElementById('dashboard-view').classList.remove('preview-open');
+        this.currentPreviewId = null;
+    }
+
+    async previewFile(uuid) {
+        if (localStorage.getItem('enablePreview') !== 'true') {
+            return;
+        }
+
+        const pane = document.getElementById('preview-pane');
+        const title = document.getElementById('preview-title');
+        const content = document.getElementById('preview-content');
+        
+        if (!pane.classList.contains('hidden') && this.currentPreviewId === uuid) {
+            this.closePreview();
+            return;
+        }
+
+        const node = this.currentFolderNodes[uuid];
+        if (!node) return;
+
+        const ext = node.name.split('.').pop().toLowerCase();
+        const binaryExts = ['zip', 'rar', 'exe', 'dll', 'bin', 'iso', 'dmg', '7z', 'tar', 'gz', 'mp3', 'wav', 'flac'];
+        if (binaryExts.includes(ext)) {
+            this.closePreview();
+            return;
+        }
+
+        this.currentPreviewId = uuid;
+        document.getElementById('dashboard-view').classList.add('preview-open');
+        pane.classList.remove('hidden');
+        content.classList.remove('empty');
+        
+        title.innerText = node.name;
+        title.title = node.name;
+        
+        if (node.size > 50 * 1024 * 1024) {
+            content.innerHTML = `<i class="ph ph-file-dashed text-4xl mb-2 text-warning"></i><p>File is too large to preview (>50MB).</p>`;
+            content.classList.add('empty');
+            return;
+        }
+        
+        content.innerHTML = `<i class="ph ph-spinner-gap text-4xl mb-2 text-primary" style="animation: spin 1s linear infinite;"></i><p>Loading preview...</p>`;
+        content.classList.add('empty');
+
+        try {
+            const res = await this.authFetch('/api/download-ticket', { method: 'POST' });
+            if (!res.ok) throw new Error('Failed to get ticket');
+            const data = await res.json();
+            
+            const url = `/api/download/${uuid}?ticket=${data.ticket}`;
+            const ext = node.name.split('.').pop().toLowerCase();
+            
+            // Image
+            if (['jpg','jpeg','png','gif','webp','svg'].includes(ext)) {
+                content.innerHTML = `<img src="${url}" alt="Preview">`;
+                content.classList.remove('empty');
+                return;
+            }
+            
+            // Video
+            if (['mp4','webm','ogg'].includes(ext)) {
+                content.innerHTML = `<video src="${url}" controls autoplay loop></video>`;
+                content.classList.remove('empty');
+                return;
+            }
+
+            // Fetch Blob for PDF, MD, Text, Binary check
+            const fileRes = await fetch(url);
+            if (this.currentPreviewId !== uuid) return;
+            if (!fileRes.ok) throw new Error('Download failed');
+            
+            const blob = await fileRes.blob();
+            if (this.currentPreviewId !== uuid) return;
+            const blobUrl = URL.createObjectURL(blob);
+            
+            // PDF
+            if (ext === 'pdf') {
+                content.innerHTML = '';
+                content.classList.remove('empty');
+                
+                try {
+                    const pdf = await pdfjsLib.getDocument(blobUrl).promise;
+                    if (this.currentPreviewId !== uuid) return;
+                    
+                    for (let i = 1; i <= pdf.numPages; i++) {
+                        if (this.currentPreviewId !== uuid) return;
+                        const canvas = document.createElement('canvas');
+                        canvas.className = 'w-full max-w-full rounded shadow-md pointer-events-none mb-4 bg-white';
+                        content.appendChild(canvas);
+                        
+                        const page = await pdf.getPage(i);
+                        if (this.currentPreviewId !== uuid) return;
+                        
+                        const viewport = page.getViewport({ scale: 1.5 });
+                        canvas.width = viewport.width;
+                        canvas.height = viewport.height;
+                        
+                        const ctx = canvas.getContext('2d');
+                        await page.render({ canvasContext: ctx, viewport: viewport }).promise;
+                    }
+                } catch (e) {
+                    if (this.currentPreviewId !== uuid) return;
+                    content.innerHTML = `<i class="ph ph-warning text-4xl mb-2 text-danger"></i><p>Failed to render PDF.</p>`;
+                    content.classList.add('empty');
+                }
+                return;
+            }
+
+            // Markdown
+            if (ext === 'md' || ext === 'markdown') {
+                const text = await blob.text();
+                if (this.currentPreviewId !== uuid) return;
+                const dirtyHtml = marked.parse(text);
+                const cleanHtml = typeof DOMPurify !== 'undefined' ? DOMPurify.sanitize(dirtyHtml) : dirtyHtml;
+                content.innerHTML = `<div class="preview-markdown">${cleanHtml}</div>`;
+                content.classList.remove('empty');
+                return;
+            }
+            
+            // Text or Binary fallback
+            const slice = blob.slice(0, 4096);
+            const textCheck = await slice.text();
+            if (this.currentPreviewId !== uuid) return;
+            
+            if (textCheck.indexOf('\0') !== -1) {
+                // Binary detected, quietly close preview
+                this.closePreview();
+                return;
+            } else {
+                // Text
+                const fullText = await blob.text();
+                if (this.currentPreviewId !== uuid) return;
+                const escapedText = fullText.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                const cleanText = typeof DOMPurify !== 'undefined' ? DOMPurify.sanitize(escapedText) : escapedText;
+                content.innerHTML = `<div class="preview-text">${cleanText}</div>`;
+                content.classList.remove('empty');
+            }
+
+        } catch (error) {
+            content.innerHTML = `<i class="ph ph-warning text-4xl mb-2 text-danger"></i><p>Failed to load preview.</p>`;
+            content.classList.add('empty');
+        }
+    }
+
     async downloadFile(uuid) {
         try {
             const res = await this.authFetch('/api/download-ticket', { method: 'POST' });
             const data = await res.json();
             if (data.ticket) {
-                document.cookie = `download_ticket=${data.ticket}; path=/api/download/${uuid}; max-age=60; samesite=strict`;
-                window.location.href = `/api/download/${uuid}`;
+                window.location.href = `/api/download/${uuid}?ticket=${data.ticket}`;
                 this.showToast('Decrypting and downloading...', 'success');
             } else {
                 this.showToast('Failed to get download ticket', 'error');
@@ -1240,6 +1437,7 @@ class CryptVaultApp {
         if (!items) return;
         
         const filesToUpload = [];
+        const emptyDirsToUpload = [];
         
         this.uploadOverlay.classList.remove('hidden');
         this.uploadTitle.textContent = "Scanning files...";
@@ -1260,11 +1458,15 @@ class CryptVaultApp {
                     const dirReader = entry.createReader();
                     dirReader.readEntries(async (entries) => {
                         const newPath = path ? `${path}/${entry.name}` : entry.name;
-                        const promises = [];
-                        for (let i = 0; i < entries.length; i++) {
-                            promises.push(scanEntry(entries[i], newPath));
+                        if (entries.length === 0) {
+                            emptyDirsToUpload.push(newPath + '/');
+                        } else {
+                            const promises = [];
+                            for (let i = 0; i < entries.length; i++) {
+                                promises.push(scanEntry(entries[i], newPath));
+                            }
+                            await Promise.all(promises);
                         }
-                        await Promise.all(promises);
                         resolve();
                     });
                 } else {
@@ -1283,6 +1485,23 @@ class CryptVaultApp {
         }
         
         await Promise.all(promises);
+
+        // Upload empty directories first
+        if (emptyDirsToUpload.length > 0) {
+            this.uploadTitle.textContent = "Creating empty directories...";
+            for (const dirPath of emptyDirsToUpload) {
+                try {
+                    await this.authFetch('/api/folders/path', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ baseParentId: this.currentFolderId, relativePath: dirPath })
+                    });
+                } catch(e) {}
+            }
+            if (filesToUpload.length === 0) {
+                this.loadNodes(this.currentFolderId);
+            }
+        }
         
         if (filesToUpload.length > 0) {
             await this.handleUploads(filesToUpload);

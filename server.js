@@ -7,15 +7,14 @@ const crypto = require('crypto');
 const multer = require('multer');
 const archiver = require('archiver');
 const bcrypt = require('bcryptjs');
-const cookieParser = require('cookie-parser');
 const { PassThrough } = require('stream');
 const { encryptStream, decryptStream, encryptMetadata, decryptMetadata } = require('./cryptoUtils');
+const { logAudit } = require('./logger');
 
 const app = express();
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-app.use(cookieParser());
 
 const helmet = require('helmet');
 
@@ -25,11 +24,12 @@ app.use(helmet({
         useDefaults: true,
         directives: {
             defaultSrc: ["'self'"],
-            scriptSrc: ["'self'", "'unsafe-inline'"],
+            scriptSrc: ["'self'", "'unsafe-inline'", "blob:"],
             styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
             fontSrc: ["'self'", "https://fonts.gstatic.com", "data:"],
-            imgSrc: ["'self'", "data:"],
-            connectSrc: ["'self'"],
+            imgSrc: ["'self'", "data:", "blob:"],
+            connectSrc: ["'self'", "blob:"],
+            workerSrc: ["'self'", "blob:"],
             upgradeInsecureRequests: null
         }
     },
@@ -63,13 +63,13 @@ class ManifestManager {
     }
 
     _seedManifest() {
+        const nodes = Object.create(null);
+        nodes["root"] = { type: "folder", name: "Vault Root", parentId: null, children: [] };
         return {
             settings: {
                 maxUploadSize: 5 * 1024 * 1024 * 1024 // 5 GB
             },
-            nodes: {
-                "root": { type: "folder", name: "Vault Root", parentId: null, children: [] }
-            }
+            nodes: nodes
         };
     }
 
@@ -97,6 +97,8 @@ class ManifestManager {
                 this.cache = this._seedManifest();
                 return this.cache;
             }
+            
+            parsed.nodes = Object.assign(Object.create(null), parsed.nodes);
             
             if (!parsed.settings) {
                 parsed.settings = { maxUploadSize: 5 * 1024 * 1024 * 1024 };
@@ -333,7 +335,8 @@ app.post('/api/setup', async (req, res) => {
         const strengthError = checkPasswordStrength(password);
         if (strengthError) return res.status(400).json({ error: strengthError });
         
-        const hash = await bcrypt.hash(password, 10);
+        const preHashed = crypto.createHash('sha256').update(password).digest('hex');
+        const hash = await bcrypt.hash(preHashed, 10);
         const currentDEK = crypto.randomBytes(32);
         
         const salt = crypto.randomBytes(32).toString('hex');
@@ -367,6 +370,8 @@ app.post('/api/setup', async (req, res) => {
         
         await manifestManager.load(currentDEK.toString('hex'));
         
+        logAudit('VAULT_SETUP', req.ip);
+        
         res.json({ success: true, token });
     } catch (err) {
         console.error("Setup error:", err);
@@ -394,7 +399,8 @@ app.post('/api/login', globalLoginLimiter, ipLoginLimiter, async (req, res) => {
         const { password } = req.body;
         
         // Use async bcrypt
-        const isValid = await bcrypt.compare(password, globalConfig.security.masterPasswordHash);
+        const preHashed = crypto.createHash('sha256').update(password).digest('hex');
+        const isValid = await bcrypt.compare(preHashed, globalConfig.security.masterPasswordHash);
         
         if (isValid) {
             // Derive KEK
@@ -429,9 +435,12 @@ app.post('/api/login', globalLoginLimiter, ipLoginLimiter, async (req, res) => {
             // Warm up cache
             await manifestManager.load(finalDEKHex);
             
+            logAudit('LOGIN_SUCCESS', req.ip);
+            
             return res.json({ success: true, token });
         }
         
+        logAudit('LOGIN_FAILED', req.ip);
         res.status(401).json({ error: 'Invalid password' });
     } catch (err) {
         console.error("Login error:", err);
@@ -568,7 +577,8 @@ app.post('/api/settings/password', authMiddleware, async (req, res) => {
     try {
         const { currentPassword, newPassword } = req.body;
         
-        const isValid = await bcrypt.compare(currentPassword, globalConfig.security.masterPasswordHash);
+        const currentPreHashed = crypto.createHash('sha256').update(currentPassword).digest('hex');
+        const isValid = await bcrypt.compare(currentPreHashed, globalConfig.security.masterPasswordHash);
         if (!isValid) {
             return res.status(401).json({ error: 'Incorrect current password' });
         }
@@ -579,7 +589,8 @@ app.post('/api/settings/password', authMiddleware, async (req, res) => {
         // We already have the decrypted DEK in memory via req.encryptionKey
         const currentDEK = Buffer.from(req.encryptionKey, 'hex');
         
-        const hash = await bcrypt.hash(newPassword, 10);
+        const newPreHashed = crypto.createHash('sha256').update(newPassword).digest('hex');
+        const hash = await bcrypt.hash(newPreHashed, 10);
         
         const salt = crypto.randomBytes(32).toString('hex');
         const scryptN = 131072;
@@ -638,7 +649,7 @@ app.post('/api/download-ticket', (req, res) => {
 
 // Download routes do NOT use authMiddleware because they are triggered via window.location.href
 const ticketAuth = (req, res, next) => {
-    const ticketId = req.query.ticket || (req.cookies && req.cookies.download_ticket);
+    const ticketId = req.query.ticket;
     if (!ticketId) return res.status(401).json({ error: 'Missing ticket' });
     
     const ticket = downloadTickets.get(ticketId);
@@ -714,6 +725,16 @@ app.post('/api/folders', async (req, res) => {
     }
 });
 
+app.post('/api/folders/path', async (req, res) => {
+    try {
+        const { baseParentId, relativePath } = req.body;
+        const actualParentId = await manifestManager.ensurePath(req.encryptionKey, baseParentId, relativePath);
+        res.json({ success: true, folderId: actualParentId });
+    } catch (err) {
+        res.status(500).json({ error: 'Failed to create path' });
+    }
+});
+
 app.post('/api/upload', (req, res, next) => {
     activeTransfers++;
     let done = false;
@@ -766,6 +787,9 @@ app.post('/api/upload', (req, res, next) => {
         manifest.nodes[actualParentId].children.push(uuid);
 
         await manifestManager.save(req.encryptionKey);
+        
+        logAudit('UPLOAD_FILE', req.ip, { uuid, filename: originalname, size: stat.size });
+        
         res.json({ success: true, uuid, node: manifest.nodes[uuid] });
     } catch (err) {
         console.error("Upload error:", err);
@@ -798,6 +822,8 @@ app.get('/api/download/:uuid', ticketAuth, async (req, res) => {
         res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(node.name)}`);
         res.setHeader('Content-Type', 'application/octet-stream');
 
+        logAudit('DOWNLOAD_FILE', req.ip, { uuid });
+        
         await decryptStream(filePath, res, req.encryptionKey);
     } catch (err) {
         if (!res.headersSent) res.status(500).json({ error: 'Decryption failed' });
@@ -983,11 +1009,15 @@ app.use((err, req, res, next) => {
 // Periodic cleanup of expired sessions and tickets (every hour)
 setInterval(() => {
     const now = Date.now();
+    let expiredCount = 0;
     for (const [token, session] of sessions.entries()) {
         if (session.expiresAt < now) {
             sessions.delete(token);
-            manifestManager.cache = null; // Purge cache when session dies
+            expiredCount++;
         }
+    }
+    if (expiredCount > 0) {
+        manifestManager.cache = null; // Purge cache when sessions die
     }
     for (const [ticket, data] of downloadTickets.entries()) {
         if (data.expiresAt < now) downloadTickets.delete(ticket);
