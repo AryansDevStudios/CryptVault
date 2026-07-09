@@ -22,23 +22,21 @@ const helmet = require('helmet');
 // Add security headers using Helmet
 app.use(helmet({
     contentSecurityPolicy: {
+        useDefaults: true,
         directives: {
             defaultSrc: ["'self'"],
             scriptSrc: ["'self'", "'unsafe-inline'"],
             styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
             fontSrc: ["'self'", "https://fonts.gstatic.com", "data:"],
             imgSrc: ["'self'", "data:"],
-            connectSrc: ["'self'"]
+            connectSrc: ["'self'"],
+            upgradeInsecureRequests: null
         }
     },
     frameguard: {
-        action: 'deny' // Sets X-Frame-Options: DENY
+        action: 'deny'
     },
-    hsts: {
-        maxAge: 31536000,
-        includeSubDomains: true,
-        preload: true
-    }
+    hsts: false
 }));
 
 app.use(express.static(path.join(__dirname, 'public')));
@@ -473,9 +471,60 @@ app.post('/api/settings', authMiddleware, async (req, res) => {
     }
 });
 
-app.post('/api/settings/network', authMiddleware, (req, res) => {
+const tlsUpload = multer({ storage: multer.memoryStorage() }).fields([
+    { name: 'tlsCertFile', maxCount: 1 },
+    { name: 'tlsKeyFile', maxCount: 1 }
+]);
+
+app.post('/api/settings/network', authMiddleware, tlsUpload, (req, res) => {
     try {
-        const { port, host, trustProxy, tlsEnabled, tlsKeyPath, tlsCertPath } = req.body;
+        const port = parseInt(req.body.port, 10);
+        const host = req.body.host;
+        const trustProxy = req.body.trustProxy === 'true' || req.body.trustProxy === true;
+        const tlsEnabled = req.body.tlsEnabled === 'true' || req.body.tlsEnabled === true;
+        
+        let tlsKeyPath = globalConfig.network.tls ? globalConfig.network.tls.keyPath : '';
+        let tlsCertPath = globalConfig.network.tls ? globalConfig.network.tls.certPath : '';
+
+        if (tlsEnabled) {
+            const hasNewCert = req.files && req.files['tlsCertFile'] && req.files['tlsCertFile'][0];
+            const hasNewKey = req.files && req.files['tlsKeyFile'] && req.files['tlsKeyFile'][0];
+            
+            if (hasNewCert && hasNewKey) {
+                const certBuffer = req.files['tlsCertFile'][0].buffer;
+                const keyBuffer = req.files['tlsKeyFile'][0].buffer;
+                
+                try {
+                    const crypto = require('crypto');
+                    crypto.createSecureContext({
+                        cert: certBuffer,
+                        key: keyBuffer
+                    });
+                } catch (e) {
+                    return res.status(400).json({ error: 'Invalid TLS Certificate or Key' });
+                }
+                
+                const tlsDir = path.join(__dirname, 'tls');
+                if (!fs.existsSync(tlsDir)) {
+                    fs.mkdirSync(tlsDir, { recursive: true });
+                }
+                tlsCertPath = path.join(tlsDir, 'server.crt');
+                tlsKeyPath = path.join(tlsDir, 'server.key');
+                
+                fs.writeFileSync(tlsCertPath, certBuffer);
+                fs.writeFileSync(tlsKeyPath, keyBuffer);
+            } else if (!tlsCertPath || !tlsKeyPath || !fs.existsSync(tlsCertPath) || !fs.existsSync(tlsKeyPath)) {
+                return res.status(400).json({ error: 'TLS enabled but certificates are missing or invalid' });
+            }
+        } else {
+            const tlsDir = path.join(__dirname, 'tls');
+            const certP = path.join(tlsDir, 'server.crt');
+            const keyP = path.join(tlsDir, 'server.key');
+            if (fs.existsSync(certP)) fs.unlinkSync(certP);
+            if (fs.existsSync(keyP)) fs.unlinkSync(keyP);
+            tlsKeyPath = '';
+            tlsCertPath = '';
+        }
         
         saveConfig({
             network: {
@@ -484,14 +533,15 @@ app.post('/api/settings/network', authMiddleware, (req, res) => {
                 trustProxy: !!trustProxy,
                 tls: {
                     enabled: !!tlsEnabled,
-                    keyPath: tlsKeyPath || '',
-                    certPath: tlsCertPath || ''
+                    keyPath: tlsKeyPath,
+                    certPath: tlsCertPath
                 }
             }
         });
         
         res.json({ success: true, network: globalConfig.network });
     } catch (e) {
+        console.error(e);
         res.status(500).json({ error: 'Failed to save network settings' });
     }
 });
@@ -512,44 +562,6 @@ app.post('/api/system/restart', authMiddleware, (req, res) => {
     setTimeout(() => {
         restartServer().catch(err => console.error("Restart failed:", err));
     }, 500);
-});
-
-app.get('/api/sessions', authMiddleware, (req, res) => {
-    const activeSessions = [];
-    for (const [token, session] of sessions.entries()) {
-        // Only return non-expired sessions, but don't expose the derivedKey
-        if (session.expiresAt > Date.now()) {
-            activeSessions.push({
-                id: token,
-                createdAt: session.createdAt,
-                expiresAt: session.expiresAt,
-                userAgent: session.userAgent,
-                ip: session.ip,
-                isCurrent: token === req.sessionToken
-            });
-        }
-    }
-    res.json({ success: true, sessions: activeSessions });
-});
-
-app.delete('/api/sessions/:token', authMiddleware, (req, res) => {
-    const { token } = req.params;
-    if (sessions.has(token)) {
-        sessions.delete(token);
-        if (token === req.sessionToken) {
-            manifestManager.cache = null; // if self-revoking
-        }
-    }
-    res.json({ success: true });
-});
-
-app.delete('/api/sessions', authMiddleware, (req, res) => {
-    for (const [token, session] of sessions.entries()) {
-        if (token !== req.sessionToken) {
-            sessions.delete(token);
-        }
-    }
-    res.json({ success: true });
 });
 
 app.post('/api/settings/password', authMiddleware, async (req, res) => {
