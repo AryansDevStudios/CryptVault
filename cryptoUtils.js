@@ -1,5 +1,7 @@
 const crypto = require('crypto');
 const fs = require('fs');
+const os = require('os');
+const path = require('path');
 const { promises: fsPromises } = fs;
 
 const ALGORITHM = 'aes-256-gcm';
@@ -103,9 +105,16 @@ const decryptStream = async (inputFilePath, writeStream, keyString) => {
         decipher.setAuthTag(authTag);
 
         return new Promise((resolve, reject) => {
+            const tempFilePath = path.join(os.tmpdir(), `decrypt-${crypto.randomBytes(16).toString('hex')}.tmp`);
+            const tempWriteStream = fs.createWriteStream(tempFilePath);
+            let hasError = false;
+
             const cleanup = (err) => {
+                if (hasError) return;
+                hasError = true;
                 readStream.destroy();
-                writeStream.destroy();
+                tempWriteStream.destroy();
+                fs.unlink(tempFilePath, () => {});
                 reject(err);
             };
 
@@ -114,13 +123,39 @@ const decryptStream = async (inputFilePath, writeStream, keyString) => {
                 end: fileSize - AUTH_TAG_LENGTH - 1
             });
 
-            readStream.pipe(decipher).pipe(writeStream);
+            readStream.pipe(decipher).pipe(tempWriteStream);
 
-            writeStream.on('finish', resolve);
+            tempWriteStream.on('finish', () => {
+                if (hasError) return;
+                
+                const tempReadStream = fs.createReadStream(tempFilePath);
+                
+                const finalCleanup = (err) => {
+                    if (hasError) return;
+                    hasError = true;
+                    tempReadStream.destroy();
+                    writeStream.destroy();
+                    fs.unlink(tempFilePath, () => {});
+                    if (err) reject(err);
+                };
+
+                tempReadStream.on('error', finalCleanup);
+                writeStream.on('error', finalCleanup);
+
+                tempReadStream.on('end', () => {
+                    fs.unlink(tempFilePath, () => {});
+                });
+
+                writeStream.on('finish', () => {
+                    if (!hasError) resolve();
+                });
+
+                tempReadStream.pipe(writeStream);
+            });
 
             readStream.on('error', cleanup);
             decipher.on('error', cleanup);
-            writeStream.on('error', cleanup);
+            tempWriteStream.on('error', cleanup);
         });
     } catch (error) {
         if (fileHandle) {

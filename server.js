@@ -1,5 +1,5 @@
 const express = require('express');
-const dotenv = require('dotenv');
+const rateLimit = require('express-rate-limit');
 const path = require('path');
 const fs = require('fs');
 const fsPromises = fs.promises;
@@ -7,16 +7,40 @@ const crypto = require('crypto');
 const multer = require('multer');
 const archiver = require('archiver');
 const bcrypt = require('bcryptjs');
+const cookieParser = require('cookie-parser');
 const { PassThrough } = require('stream');
 const { encryptStream, decryptStream, encryptMetadata, decryptMetadata } = require('./cryptoUtils');
 
-dotenv.config();
-
 const app = express();
-const PORT = process.env.PORT || 3000;
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+app.use(cookieParser());
+
+const helmet = require('helmet');
+
+// Add security headers using Helmet
+app.use(helmet({
+    contentSecurityPolicy: {
+        directives: {
+            defaultSrc: ["'self'"],
+            scriptSrc: ["'self'", "'unsafe-inline'"],
+            styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+            fontSrc: ["'self'", "https://fonts.gstatic.com", "data:"],
+            imgSrc: ["'self'", "data:"],
+            connectSrc: ["'self'"]
+        }
+    },
+    frameguard: {
+        action: 'deny' // Sets X-Frame-Options: DENY
+    },
+    hsts: {
+        maxAge: 31536000,
+        includeSubDomains: true,
+        preload: true
+    }
+}));
+
 app.use(express.static(path.join(__dirname, 'public')));
 
 const UPLOADS_DIR = path.join(__dirname, 'uploads');
@@ -29,6 +53,7 @@ const MANIFEST_FILE = path.join(UPLOADS_DIR, 'manifest.enc');
 // In-Memory State
 const sessions = new Map(); // token -> { derivedKey, expiresAt }
 const downloadTickets = new Map(); // ticketId -> { derivedKey, expiresAt }
+let activeTransfers = 0; // tracking for safe restarts
 
 // Manifest Manager to prevent race conditions during concurrent requests
 class ManifestManager {
@@ -41,6 +66,9 @@ class ManifestManager {
 
     _seedManifest() {
         return {
+            settings: {
+                maxUploadSize: 5 * 1024 * 1024 * 1024 // 5 GB
+            },
             nodes: {
                 "root": { type: "folder", name: "Vault Root", parentId: null, children: [] }
             }
@@ -70,6 +98,10 @@ class ManifestManager {
             if (!parsed.nodes || !parsed.nodes.root) {
                 this.cache = this._seedManifest();
                 return this.cache;
+            }
+            
+            if (!parsed.settings) {
+                parsed.settings = { maxUploadSize: 5 * 1024 * 1024 * 1024 };
             }
 
             this.cache = parsed;
@@ -221,36 +253,183 @@ const authMiddleware = (req, res, next) => {
         return res.status(401).json({ error: 'Unauthorized: Invalid or expired token' });
     }
     
-    // Extend session life on activity
-    session.expiresAt = Date.now() + 24 * 60 * 60 * 1000;
+    // Extend session life on activity (max 7 days total)
+    const MAX_LIFETIME = 7 * 24 * 60 * 60 * 1000; // 7 days
+    if (session.createdAt && Date.now() - session.createdAt > MAX_LIFETIME) {
+        sessions.delete(token);
+        return res.status(401).json({ error: 'Unauthorized: Session absolute lifetime expired' });
+    }
+    
+    session.expiresAt = Math.min(
+        Date.now() + 24 * 60 * 60 * 1000, 
+        session.createdAt ? session.createdAt + MAX_LIFETIME : Date.now() + 24 * 60 * 60 * 1000
+    );
     
     req.encryptionKey = session.derivedKey;
     req.sessionToken = token;
     next();
 };
 
+// --- Config Manager ---
+const CONFIG_PATH = path.join(__dirname, 'config.json');
+
+let globalConfig = {
+    network: {
+        port: 3000,
+        host: "127.0.0.1",
+        trustProxy: false,
+        tls: { enabled: false, certPath: "", keyPath: "" }
+    },
+    security: {} // empty on fresh setup
+};
+
+function loadConfig() {
+    if (fs.existsSync(CONFIG_PATH)) {
+        try {
+            const data = fs.readFileSync(CONFIG_PATH, 'utf8');
+            globalConfig = JSON.parse(data);
+        } catch (err) {
+            console.error("Failed to parse config.json:", err);
+        }
+    }
+    
+    // Apply network config immediately
+    if (globalConfig.network && globalConfig.network.trustProxy) {
+        app.set('trust proxy', 1);
+    }
+}
+loadConfig();
+
+function saveConfig(updates) {
+    if (updates.security) {
+        globalConfig.security = { ...globalConfig.security, ...updates.security };
+    }
+    if (updates.network) {
+        globalConfig.network = { ...globalConfig.network, ...updates.network };
+    }
+    fs.writeFileSync(CONFIG_PATH, JSON.stringify(globalConfig, null, 2), 'utf8');
+}
+
+function checkPasswordStrength(password) {
+    if (password.length < 12) return 'Password must be at least 12 characters long.';
+    if (!/[A-Z]/.test(password)) return 'Password must contain at least one uppercase letter.';
+    if (!/[a-z]/.test(password)) return 'Password must contain at least one lowercase letter.';
+    if (!/[0-9]/.test(password)) return 'Password must contain at least one number.';
+    if (!/[^A-Za-z0-9]/.test(password)) return 'Password must contain at least one special character.';
+    return null;
+}
+
 // --- Routes ---
 
-app.post('/api/login', async (req, res) => {
+app.get('/api/status', (req, res) => {
+    res.json({ isSetup: !!globalConfig.security.masterPasswordHash });
+});
+
+app.post('/api/setup', async (req, res) => {
+    if (globalConfig.security.masterPasswordHash) {
+        return res.status(400).json({ error: 'Vault is already setup' });
+    }
+    
+    try {
+        const { password } = req.body;
+        const strengthError = checkPasswordStrength(password);
+        if (strengthError) return res.status(400).json({ error: strengthError });
+        
+        const hash = await bcrypt.hash(password, 10);
+        const currentDEK = crypto.randomBytes(32);
+        
+        const salt = crypto.randomBytes(32).toString('hex');
+        const scryptN = 131072;
+        const newKEK = crypto.scryptSync(password, salt, 32, { N: scryptN, r: 8, p: 1, maxmem: 256 * 1024 * 1024 });
+        
+        const iv = crypto.randomBytes(16);
+        const cipher = crypto.createCipheriv('aes-256-gcm', newKEK, iv);
+        const encryptedDEK = Buffer.concat([cipher.update(currentDEK), cipher.final()]);
+        const authTag = cipher.getAuthTag();
+        
+        saveConfig({
+            security: {
+                masterPasswordHash: hash,
+                keyDerivationSalt: salt,
+                scryptN: scryptN,
+                encryptedDek: encryptedDEK.toString('hex'),
+                dekIv: iv.toString('hex'),
+                dekAuthTag: authTag.toString('hex')
+            }
+        });
+        
+        const token = crypto.randomUUID();
+        sessions.set(token, {
+            derivedKey: currentDEK.toString('hex'),
+            createdAt: Date.now(),
+            expiresAt: Date.now() + 24 * 60 * 60 * 1000,
+            userAgent: req.headers['user-agent'] || 'Unknown Device',
+            ip: req.ip
+        });
+        
+        await manifestManager.load(currentDEK.toString('hex'));
+        
+        res.json({ success: true, token });
+    } catch (err) {
+        console.error("Setup error:", err);
+        res.status(500).json({ error: 'Failed to complete setup' });
+    }
+});
+
+const globalLoginLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 20, // 20 failed attempts total across all IPs
+    keyGenerator: () => 'global',
+    message: { error: 'Vault is under attack. Global lockout active for 15 minutes.' },
+    skipSuccessfulRequests: true
+});
+
+const ipLoginLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 5, // Limit each IP to 5 failed requests per windowMs
+    message: { error: 'Too many failed login attempts from this IP, please try again after 15 minutes.' },
+    skipSuccessfulRequests: true
+});
+
+app.post('/api/login', globalLoginLimiter, ipLoginLimiter, async (req, res) => {
     try {
         const { password } = req.body;
         
         // Use async bcrypt
-        const isValid = await bcrypt.compare(password, process.env.MASTER_PASSWORD_HASH);
+        const isValid = await bcrypt.compare(password, globalConfig.security.masterPasswordHash);
         
         if (isValid) {
-            // Dynamically derive the 256-bit AES key and hold it in RAM
-            const derivedKeyBuffer = crypto.scryptSync(password, process.env.KEY_DERIVATION_SALT, 32);
-            const derivedKeyHex = derivedKeyBuffer.toString('hex');
+            // Derive KEK
+            const scryptN = parseInt(globalConfig.security.scryptN || 16384, 10);
+            const kek = crypto.scryptSync(password, globalConfig.security.keyDerivationSalt, 32, { N: scryptN, r: 8, p: 1, maxmem: 256 * 1024 * 1024 });
+            
+            let finalDEKHex;
+            if (globalConfig.security.encryptedDek && globalConfig.security.dekIv) {
+                try {
+                    const decipher = crypto.createDecipheriv('aes-256-gcm', kek, Buffer.from(globalConfig.security.dekIv, 'hex'));
+                    if (globalConfig.security.dekAuthTag) decipher.setAuthTag(Buffer.from(globalConfig.security.dekAuthTag, 'hex'));
+                    const dek = Buffer.concat([decipher.update(Buffer.from(globalConfig.security.encryptedDek, 'hex')), decipher.final()]);
+                    finalDEKHex = dek.toString('hex');
+                } catch (e) {
+                    console.error("DEK Decryption Error:", e);
+                    return res.status(500).json({ error: 'Failed to decrypt Data Encryption Key' });
+                }
+            } else {
+                // Legacy fallback
+                finalDEKHex = kek.toString('hex');
+            }
             
             const token = crypto.randomUUID();
             sessions.set(token, {
-                derivedKey: derivedKeyHex,
-                expiresAt: Date.now() + 24 * 60 * 60 * 1000 // 24 hours
+                derivedKey: finalDEKHex,
+                createdAt: Date.now(),
+                expiresAt: Date.now() + 24 * 60 * 60 * 1000, // 24 hours
+                userAgent: req.headers['user-agent'] || 'Unknown Device',
+                ip: req.ip
             });
             
             // Warm up cache
-            await manifestManager.load(derivedKeyHex);
+            await manifestManager.load(finalDEKHex);
             
             return res.json({ success: true, token });
         }
@@ -266,6 +445,162 @@ app.post('/api/logout', authMiddleware, (req, res) => {
     sessions.delete(req.sessionToken);
     manifestManager.cache = null; // Clear cache on logout for security (single user assumption)
     res.json({ success: true });
+});
+
+app.get('/api/settings', authMiddleware, async (req, res) => {
+    try {
+        const manifest = await manifestManager.load(req.encryptionKey);
+        res.json({ success: true, settings: manifest.settings, network: globalConfig.network });
+    } catch (err) {
+        res.status(500).json({ error: 'Failed to load settings' });
+    }
+});
+
+app.post('/api/settings', authMiddleware, async (req, res) => {
+    try {
+        const { maxUploadSize } = req.body;
+        if (!maxUploadSize || typeof maxUploadSize !== 'number') {
+            return res.status(400).json({ error: 'Invalid settings' });
+        }
+        
+        const manifest = await manifestManager.load(req.encryptionKey);
+        manifest.settings.maxUploadSize = maxUploadSize;
+        await manifestManager.save(req.encryptionKey);
+        
+        res.json({ success: true, settings: manifest.settings });
+    } catch (err) {
+        res.status(500).json({ error: 'Failed to save settings' });
+    }
+});
+
+app.post('/api/settings/network', authMiddleware, (req, res) => {
+    try {
+        const { port, host, trustProxy, tlsEnabled, tlsKeyPath, tlsCertPath } = req.body;
+        
+        saveConfig({
+            network: {
+                port: port || 3000,
+                host: host || '127.0.0.1',
+                trustProxy: !!trustProxy,
+                tls: {
+                    enabled: !!tlsEnabled,
+                    keyPath: tlsKeyPath || '',
+                    certPath: tlsCertPath || ''
+                }
+            }
+        });
+        
+        res.json({ success: true, network: globalConfig.network });
+    } catch (e) {
+        res.status(500).json({ error: 'Failed to save network settings' });
+    }
+});
+
+app.post('/api/system/restart', authMiddleware, (req, res) => {
+    if (activeTransfers > 0) {
+        return res.status(409).json({ error: 'Cannot restart: Active transfers in progress' });
+    }
+    
+    const host = globalConfig.network.host || '127.0.0.1';
+    const port = globalConfig.network.port;
+    const protocol = (globalConfig.network.tls && globalConfig.network.tls.enabled) ? 'https' : 'http';
+    const newUrl = `${protocol}://${host}:${port}`;
+    
+    // Respond immediately, then restart asynchronously
+    res.json({ success: true, newUrl });
+    
+    setTimeout(() => {
+        restartServer().catch(err => console.error("Restart failed:", err));
+    }, 500);
+});
+
+app.get('/api/sessions', authMiddleware, (req, res) => {
+    const activeSessions = [];
+    for (const [token, session] of sessions.entries()) {
+        // Only return non-expired sessions, but don't expose the derivedKey
+        if (session.expiresAt > Date.now()) {
+            activeSessions.push({
+                id: token,
+                createdAt: session.createdAt,
+                expiresAt: session.expiresAt,
+                userAgent: session.userAgent,
+                ip: session.ip,
+                isCurrent: token === req.sessionToken
+            });
+        }
+    }
+    res.json({ success: true, sessions: activeSessions });
+});
+
+app.delete('/api/sessions/:token', authMiddleware, (req, res) => {
+    const { token } = req.params;
+    if (sessions.has(token)) {
+        sessions.delete(token);
+        if (token === req.sessionToken) {
+            manifestManager.cache = null; // if self-revoking
+        }
+    }
+    res.json({ success: true });
+});
+
+app.delete('/api/sessions', authMiddleware, (req, res) => {
+    for (const [token, session] of sessions.entries()) {
+        if (token !== req.sessionToken) {
+            sessions.delete(token);
+        }
+    }
+    res.json({ success: true });
+});
+
+app.post('/api/settings/password', authMiddleware, async (req, res) => {
+    try {
+        const { currentPassword, newPassword } = req.body;
+        
+        const isValid = await bcrypt.compare(currentPassword, globalConfig.security.masterPasswordHash);
+        if (!isValid) {
+            return res.status(401).json({ error: 'Incorrect current password' });
+        }
+        
+        const strengthError = checkPasswordStrength(newPassword);
+        if (strengthError) return res.status(400).json({ error: strengthError });
+        
+        // We already have the decrypted DEK in memory via req.encryptionKey
+        const currentDEK = Buffer.from(req.encryptionKey, 'hex');
+        
+        const hash = await bcrypt.hash(newPassword, 10);
+        
+        const salt = crypto.randomBytes(32).toString('hex');
+        const scryptN = 131072;
+        const newKEK = crypto.scryptSync(newPassword, salt, 32, { N: scryptN, r: 8, p: 1, maxmem: 256 * 1024 * 1024 });
+        
+        const iv = crypto.randomBytes(16);
+        const cipher = crypto.createCipheriv('aes-256-gcm', newKEK, iv);
+        const encryptedDEK = Buffer.concat([cipher.update(currentDEK), cipher.final()]);
+        const authTag = cipher.getAuthTag();
+        
+        saveConfig({
+            security: {
+                masterPasswordHash: hash,
+                keyDerivationSalt: salt,
+                scryptN: scryptN,
+                encryptedDek: encryptedDEK.toString('hex'),
+                dekIv: iv.toString('hex'),
+                dekAuthTag: authTag.toString('hex')
+            }
+        });
+        
+        // Revoke all OTHER sessions to force re-login on other devices
+        for (const [token, session] of sessions.entries()) {
+            if (token !== req.sessionToken) {
+                sessions.delete(token);
+            }
+        }
+        
+        res.json({ success: true });
+    } catch (err) {
+        console.error("Password rotation error:", err);
+        res.status(500).json({ error: 'Failed to update password' });
+    }
 });
 
 app.get('/api/check-auth', authMiddleware, (req, res) => {
@@ -291,7 +626,7 @@ app.post('/api/download-ticket', (req, res) => {
 
 // Download routes do NOT use authMiddleware because they are triggered via window.location.href
 const ticketAuth = (req, res, next) => {
-    const ticketId = req.query.ticket;
+    const ticketId = req.query.ticket || (req.cookies && req.cookies.download_ticket);
     if (!ticketId) return res.status(401).json({ error: 'Missing ticket' });
     
     const ticket = downloadTickets.get(ticketId);
@@ -367,11 +702,40 @@ app.post('/api/folders', async (req, res) => {
     }
 });
 
-app.post('/api/upload', upload.single('file'), async (req, res) => {
+app.post('/api/upload', (req, res, next) => {
+    activeTransfers++;
+    let done = false;
+    const dec = () => { if (!done) { activeTransfers--; done = true; } };
+    res.on('finish', dec);
+    res.on('close', dec);
+    next();
+}, async (req, res, next) => {
+    try {
+        const manifest = await manifestManager.load(req.encryptionKey);
+        const limit = manifest.settings?.maxUploadSize || 5 * 1024 * 1024 * 1024;
+        
+        const dynamicUpload = multer({
+            storage: storage,
+            limits: { fileSize: limit }
+        }).single('file');
+        
+        dynamicUpload(req, res, function (err) {
+            if (err instanceof multer.MulterError && err.code === 'LIMIT_FILE_SIZE') {
+                return res.status(413).json({ error: 'File too large' });
+            } else if (err) {
+                return res.status(500).json({ error: 'Upload error' });
+            }
+            next();
+        });
+    } catch (err) {
+        res.status(500).json({ error: 'Failed to initialize upload' });
+    }
+}, async (req, res) => {
     try {
         if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
 
-        const { filename: uuid, originalname } = req.file;
+        const { filename: uuid } = req.file;
+        const originalname = req.body.originalname || req.file.originalname;
         const stat = await fsPromises.stat(req.file.path);
 
         const baseParentId = req.body.parentId || 'root';
@@ -398,6 +762,12 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
 });
 
 app.get('/api/download/:uuid', ticketAuth, async (req, res) => {
+    activeTransfers++;
+    let done = false;
+    const dec = () => { if (!done) { activeTransfers--; done = true; } };
+    res.on('finish', dec);
+    res.on('close', dec);
+    
     try {
         const { uuid } = req.params;
         const manifest = await manifestManager.load(req.encryptionKey);
@@ -612,8 +982,46 @@ setInterval(() => {
     }
 }, 60 * 60 * 1000);
 
-app.listen(PORT, () => {
-    console.log(`Server running on http://localhost:${PORT}`);
-});
+let activeServer = null;
+
+function startServer() {
+    const PORT = globalConfig.network.port;
+    const HOST = globalConfig.network.host;
+    
+    if (globalConfig.network.tls && globalConfig.network.tls.enabled && globalConfig.network.tls.keyPath && globalConfig.network.tls.certPath) {
+        const https = require('https');
+        const options = {
+            key: fs.readFileSync(globalConfig.network.tls.keyPath),
+            cert: fs.readFileSync(globalConfig.network.tls.certPath)
+        };
+        activeServer = https.createServer(options, app).listen(PORT, HOST, () => {
+            console.log(`Server running securely on https://${HOST}:${PORT}`);
+        });
+    } else {
+        const http = require('http');
+        activeServer = http.createServer(app).listen(PORT, HOST, () => {
+            console.log(`Server running on http://${HOST}:${PORT}\nWARNING: Running in plain HTTP.`);
+        });
+    }
+}
+
+function restartServer() {
+    return new Promise((resolve, reject) => {
+        if (activeServer) {
+            console.log("Shutting down active server...");
+            activeServer.close((err) => {
+                if (err) return reject(err);
+                console.log("Active server closed. Starting new server...");
+                startServer();
+                resolve();
+            });
+        } else {
+            startServer();
+            resolve();
+        }
+    });
+}
+
+startServer();
 
 module.exports = app;

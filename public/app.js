@@ -6,6 +6,12 @@ class CryptVaultApp {
         this.selectedNodes = new Set();
         
         // UI Elements
+        this.setupView = document.getElementById('setup-view');
+        this.setupForm = document.getElementById('setup-form');
+        this.setupPasswordInput = document.getElementById('setup-password');
+        this.setupConfirmInput = document.getElementById('setup-confirm');
+        this.setupError = document.getElementById('setup-error');
+        
         this.loginView = document.getElementById('login-view');
         this.dashboardView = document.getElementById('dashboard-view');
         this.loginForm = document.getElementById('login-form');
@@ -44,21 +50,59 @@ class CryptVaultApp {
         this.confirmBtn = document.getElementById('confirm-btn');
         this.pendingConfirmAction = null;
         
+        this.settingsModal = document.getElementById('settings-modal');
+        this.settingMaxUpload = document.getElementById('setting-max-upload');
+        this.settings = null;
+        
+        this.summaryPanel = document.getElementById('upload-summary-panel');
+        this.summaryDetails = document.getElementById('summary-details');
+        this.summarySuccessCount = document.getElementById('summary-success-count');
+        this.summaryErrorCount = document.getElementById('summary-error-count');
+        this.summarySuccessList = document.getElementById('summary-success-list');
+        this.summaryErrorList = document.getElementById('summary-error-list');
+        this.summaryToggleIcon = document.getElementById('summary-toggle-icon');
+        
+        this.conflictModal = document.getElementById('conflict-modal');
+        this.conflictMessage = document.getElementById('conflict-message');
+        this.conflictSkipBtn = document.getElementById('conflict-skip-btn');
+        this.conflictKeepBtn = document.getElementById('conflict-keep-btn');
+        this.conflictReplaceBtn = document.getElementById('conflict-replace-btn');
+        this.conflictListContainer = document.getElementById('conflict-list-container');
+        this.conflictApplyBtn = document.getElementById('conflict-apply-btn');
+        this.pendingConflictResolution = null;
+
         this.init();
     }
 
     init() {
         this.bindEvents();
-        this.checkAuth();
+        this.checkAuthStatus();
     }
 
     bindEvents() {
-        this.loginForm.addEventListener('submit', (e) => {
+        this.setupForm.addEventListener('submit', (e) => { e.preventDefault(); this.handleSetup(); });
+        this.loginForm.addEventListener('submit', (e) => { e.preventDefault(); this.handleLogin(); });
+        this.logoutBtn.addEventListener('click', () => this.handleLogout());
+        
+        // Settings / UI
+        document.getElementById('change-password-form').addEventListener('submit', (e) => {
             e.preventDefault();
-            this.handleLogin();
+            this.handleChangePassword();
         });
         
-        this.logoutBtn.addEventListener('click', () => this.handleLogout());
+        const tlsCheckbox = document.getElementById('setting-net-tls');
+        tlsCheckbox.addEventListener('change', (e) => {
+            document.getElementById('tls-settings-container').style.display = e.target.checked ? 'flex' : 'none';
+        });
+        
+        document.getElementById('network-settings-form').addEventListener('submit', (e) => {
+            e.preventDefault();
+            this.saveNetworkSettings();
+        });
+        
+        document.getElementById('btn-restart-server').addEventListener('click', () => {
+            this.triggerRestart();
+        });
         
         this.fileUploadInput.addEventListener('change', (e) => this.handleUploads(e.target.files));
         this.folderUploadInput.addEventListener('change', (e) => this.handleUploads(e.target.files));
@@ -128,8 +172,16 @@ class CryptVaultApp {
 
     // --- Modals ---
     closeModals() {
-        this.newFolderModal.classList.add('hidden');
-        this.confirmModal.classList.add('hidden');
+        if (this.newFolderModal) this.newFolderModal.classList.add('hidden');
+        if (this.settingsModal) this.settingsModal.classList.add('hidden');
+        if (this.confirmModal) this.confirmModal.classList.add('hidden');
+        if (this.conflictModal) {
+            this.conflictModal.classList.add('hidden');
+            if (this.pendingConflictResolution) {
+                this.pendingConflictResolution('skip');
+                this.pendingConflictResolution = null;
+            }
+        }
         this.newFolderName.value = '';
         this.pendingConfirmAction = null;
     }
@@ -152,39 +204,96 @@ class CryptVaultApp {
 
     // --- State & Auth ---
     switchView(view) {
-        if (view === 'dashboard') {
-            this.loginView.classList.remove('active-view');
-            setTimeout(() => {
-                this.loginView.classList.add('hidden');
-                this.dashboardView.classList.remove('hidden');
-                // trigger reflow
-                void this.dashboardView.offsetWidth;
-                this.dashboardView.classList.add('active-view');
-            }, 400); // Wait for transition
-            this.loadNodes(this.currentFolderId);
-        } else {
-            this.dashboardView.classList.remove('active-view');
-            setTimeout(() => {
-                this.dashboardView.classList.add('hidden');
-                this.loginView.classList.remove('hidden');
-                void this.loginView.offsetWidth;
-                this.loginView.classList.add('active-view');
-            }, 400);
-        }
+        const views = {
+            'setup': this.setupView,
+            'login': this.loginView,
+            'dashboard': this.dashboardView
+        };
+        
+        // Hide all
+        Object.values(views).forEach(v => {
+            if (v.classList.contains('active-view')) {
+                v.classList.remove('active-view');
+                setTimeout(() => v.classList.add('hidden'), 400);
+            } else {
+                v.classList.add('hidden');
+            }
+        });
+        
+        // Show target
+        setTimeout(() => {
+            if (views[view]) {
+                views[view].classList.remove('hidden');
+                void views[view].offsetWidth;
+                views[view].classList.add('active-view');
+            }
+            if (view === 'dashboard') {
+                this.loadNodes(this.currentFolderId);
+            }
+        }, 400);
     }
 
-    async checkAuth() {
-        if (!this.token) return;
+    async checkAuthStatus() {
         try {
+            const statusRes = await fetch('/api/status');
+            const statusData = await statusRes.json();
+            
+            if (!statusData.isSetup) {
+                this.switchView('setup');
+                return;
+            }
+            
+            if (!this.token) {
+                this.switchView('login');
+                return;
+            }
+            
             const res = await this.authFetch('/api/check-auth');
             const data = await res.json();
             if (data.authenticated) {
+                await this.loadSettings();
                 this.switchView('dashboard');
             } else {
                 this.clearSession();
             }
         } catch (e) {
             this.clearSession();
+        }
+    }
+
+    async handleSetup() {
+        const password = this.setupPasswordInput.value;
+        const confirm = this.setupConfirmInput.value;
+        
+        if (password !== confirm) {
+            this.setupError.textContent = 'Passwords do not match';
+            this.setupError.classList.remove('hidden');
+            return;
+        }
+        
+        try {
+            const res = await fetch('/api/setup', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ password })
+            });
+            const data = await res.json();
+            
+            if (res.ok && data.success) {
+                this.token = data.token;
+                sessionStorage.setItem('token', this.token);
+                this.setupPasswordInput.value = '';
+                this.setupConfirmInput.value = '';
+                this.setupError.classList.add('hidden');
+                await this.loadSettings();
+                this.switchView('dashboard');
+            } else {
+                this.setupError.textContent = data.error || 'Setup failed';
+                this.setupError.classList.remove('hidden');
+            }
+        } catch (error) {
+            this.setupError.textContent = 'Server connection error';
+            this.setupError.classList.remove('hidden');
         }
     }
 
@@ -203,6 +312,7 @@ class CryptVaultApp {
                 sessionStorage.setItem('token', this.token);
                 this.passwordInput.value = '';
                 this.loginError.classList.add('hidden');
+                await this.loadSettings();
                 this.switchView('dashboard');
             } else {
                 this.loginError.textContent = data.error || 'Login failed';
@@ -247,6 +357,7 @@ class CryptVaultApp {
             this.selectedNodes.clear();
             this.updateBulkActions();
             
+            this.currentFolderNodes = data.children;
             this.renderBreadcrumbs(data.breadcrumbs);
             this.renderNodes(data.children);
             
@@ -336,7 +447,7 @@ class CryptVaultApp {
                 </div>
                 <div class="item-name">
                     ${iconHtml}
-                    <span class="item-title" title="${node.name}">${node.name}</span>
+                    <span class="item-title"></span>
                 </div>
                 <div class="item-size text-right">${this.formatBytes(node.size)}</div>
                 <div class="item-date text-right">${this.formatDate(node.uploadedAt || node.createdAt)}</div>
@@ -344,6 +455,10 @@ class CryptVaultApp {
                     ${actionsHtml}
                 </div>
             `;
+            
+            const titleSpan = el.querySelector('.item-title');
+            titleSpan.textContent = node.name;
+            titleSpan.setAttribute('title', node.name);
             
             el.onclick = () => {
                 if (isFolder) this.loadNodes(node.id);
@@ -413,6 +528,237 @@ class CryptVaultApp {
         this.updateBulkActions();
     }
 
+    // --- Settings ---
+    async loadSettings() {
+        try {
+            const res = await this.authFetch('/api/settings');
+            const data = await res.json();
+            if (data.success) {
+                this.settings = data.settings;
+                if (this.settings.maxUploadSize) {
+                    this.settingMaxUpload.value = Math.floor(this.settings.maxUploadSize / (1024 * 1024));
+                }
+                
+                if (data.network) {
+                    document.getElementById('setting-net-port').value = data.network.port || 3000;
+                    document.getElementById('setting-net-host').value = data.network.host || '127.0.0.1';
+                    document.getElementById('setting-net-proxy').checked = !!data.network.trustProxy;
+                    
+                    if (data.network.tls) {
+                        const tlsEnabled = !!data.network.tls.enabled;
+                        document.getElementById('setting-net-tls').checked = tlsEnabled;
+                        document.getElementById('tls-settings-container').style.display = tlsEnabled ? 'flex' : 'none';
+                        document.getElementById('setting-tls-cert').value = data.network.tls.certPath || '';
+                        document.getElementById('setting-tls-key').value = data.network.tls.keyPath || '';
+                    }
+                }
+            }
+        } catch (e) {
+            console.error("Failed to load settings:", e);
+        }
+    }
+    
+    async openSettingsModal() {
+        if (!this.settings) return;
+        const mbSize = Math.floor(this.settings.maxUploadSize / (1024 * 1024));
+        this.settingMaxUpload.value = mbSize;
+        
+        try {
+            const res = await this.authFetch('/api/sessions');
+            const data = await res.json();
+            if (data.success) {
+                this.renderSessions(data.sessions);
+            }
+        } catch (e) {
+            console.error("Failed to load sessions", e);
+        }
+        
+        this.settingsModal.classList.remove('hidden');
+    }
+    
+    renderSessions(sessions) {
+        const container = document.getElementById('sessions-list');
+        container.innerHTML = '';
+        
+        sessions.forEach(session => {
+            const div = document.createElement('div');
+            div.style.padding = '0.75rem';
+            div.style.background = 'rgba(0, 0, 0, 0.2)';
+            div.style.borderRadius = '0.5rem';
+            div.style.display = 'flex';
+            div.style.justifyContent = 'space-between';
+            div.style.alignItems = 'center';
+            div.style.border = session.isCurrent ? '1px solid var(--color-primary)' : '1px solid var(--color-border)';
+            
+            const info = document.createElement('div');
+            info.innerHTML = `
+                <div style="font-weight: 500; font-size: 0.9rem; color: var(--color-text-main);">
+                    ${session.userAgent} ${session.isCurrent ? '<span style="color:var(--color-primary); font-size:0.75rem; margin-left:0.5rem;">(Current)</span>' : ''}
+                </div>
+                <div style="font-size: 0.8rem; color: var(--color-text-muted); margin-top: 0.25rem;">
+                    IP: ${session.ip || 'Unknown'} • Created: ${new Date(session.createdAt || Date.now()).toLocaleDateString()}
+                </div>
+            `;
+            
+            const revokeBtn = document.createElement('button');
+            revokeBtn.className = 'btn btn-danger btn-sm';
+            revokeBtn.textContent = 'Revoke';
+            revokeBtn.onclick = () => this.revokeSession(session.id);
+            if (session.isCurrent) {
+                revokeBtn.disabled = true;
+                revokeBtn.style.opacity = '0.5';
+                revokeBtn.style.cursor = 'not-allowed';
+            }
+            
+            div.appendChild(info);
+            div.appendChild(revokeBtn);
+            container.appendChild(div);
+        });
+    }
+
+    async revokeSession(token) {
+        try {
+            const res = await this.authFetch(`/api/sessions/${token}`, { method: 'DELETE' });
+            if (res.ok) {
+                this.showToast('Session revoked', 'success');
+                this.openSettingsModal();
+            }
+        } catch (e) {
+            this.showToast('Failed to revoke session', 'error');
+        }
+    }
+
+    async revokeAllSessions() {
+        try {
+            const res = await this.authFetch(`/api/sessions`, { method: 'DELETE' });
+            if (res.ok) {
+                this.showToast('All other sessions revoked', 'success');
+                this.openSettingsModal();
+            }
+        } catch (e) {
+            this.showToast('Failed to revoke sessions', 'error');
+        }
+    }
+    async handleChangePassword() {
+        const currentPassword = document.getElementById('setting-current-password').value;
+        const newPassword = document.getElementById('setting-new-password').value;
+        const confirmPassword = document.getElementById('setting-confirm-password').value;
+        const errorEl = document.getElementById('password-error');
+        const successEl = document.getElementById('password-success');
+        
+        errorEl.classList.add('hidden');
+        successEl.style.display = 'none';
+        
+        if (newPassword !== confirmPassword) {
+            errorEl.textContent = 'New passwords do not match';
+            errorEl.classList.remove('hidden');
+            return;
+        }
+        
+        try {
+            const res = await this.authFetch('/api/settings/password', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ currentPassword, newPassword })
+            });
+            const data = await res.json();
+            
+            if (res.ok && data.success) {
+                successEl.style.display = 'block';
+                document.getElementById('change-password-form').reset();
+                setTimeout(() => { successEl.style.display = 'none'; }, 3000);
+            } else {
+                errorEl.textContent = data.error || 'Failed to update password';
+                errorEl.classList.remove('hidden');
+            }
+        } catch (e) {
+            errorEl.textContent = 'Server connection error';
+            errorEl.classList.remove('hidden');
+        }
+    }
+    
+    async saveSettings() {
+        const mbSize = parseInt(this.settingMaxUpload.value, 10);
+        if (isNaN(mbSize) || mbSize < 1) {
+            this.showToast('Invalid size. Must be >= 1 MB', 'error');
+            return;
+        }
+        const bytes = mbSize * 1024 * 1024;
+        
+        try {
+            const res = await this.authFetch('/api/settings', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ maxUploadSize: bytes })
+            });
+            const data = await res.json();
+            if (data.success) {
+                this.settings = data.settings;
+                this.showToast('General Settings saved successfully');
+                this.closeModals();
+            } else {
+                this.showToast('Failed to save settings', 'error');
+            }
+        } catch (e) {
+            this.showToast('Error saving settings', 'error');
+        }
+    }
+    
+    async saveNetworkSettings() {
+        const port = parseInt(document.getElementById('setting-net-port').value, 10);
+        const host = document.getElementById('setting-net-host').value;
+        const trustProxy = document.getElementById('setting-net-proxy').checked;
+        const tlsEnabled = document.getElementById('setting-net-tls').checked;
+        const tlsCertPath = document.getElementById('setting-tls-cert').value;
+        const tlsKeyPath = document.getElementById('setting-tls-key').value;
+        
+        if (tlsEnabled && (!tlsCertPath || !tlsKeyPath)) {
+            this.showToast('Must provide TLS Cert and Key paths', 'error');
+            return;
+        }
+        
+        try {
+            const res = await this.authFetch('/api/settings/network', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ port, host, trustProxy, tlsEnabled, tlsCertPath, tlsKeyPath })
+            });
+            const data = await res.json();
+            if (data.success) {
+                this.showToast('Network settings saved!');
+                document.getElementById('btn-restart-server').style.display = 'inline-flex';
+            } else {
+                this.showToast('Failed to save network config', 'error');
+            }
+        } catch (e) {
+            this.showToast('Error saving network settings', 'error');
+        }
+    }
+    
+    async triggerRestart() {
+        this.showToast('Restarting server...', 'info');
+        try {
+            const res = await this.authFetch('/api/system/restart', { method: 'POST' });
+            const data = await res.json();
+            
+            if (res.status === 409) {
+                this.showToast(data.error || 'Transfers in progress. Wait and try again.', 'error');
+                return;
+            }
+            
+            if (data.success) {
+                this.showToast('Server restarting. Reconnecting...', 'success');
+                setTimeout(() => {
+                    window.location.href = data.newUrl;
+                }, 2000); // Give backend 2s to rebind
+            } else {
+                this.showToast('Restart failed: ' + (data.error || 'Unknown'), 'error');
+            }
+        } catch (e) {
+            this.showToast('Server closed unexpectedly. If port changed, refresh manually.', 'warning');
+        }
+    }
+
     // --- Actions ---
     async submitNewFolder() {
         const name = this.newFolderName.value.trim();
@@ -442,7 +788,8 @@ class CryptVaultApp {
             const res = await this.authFetch('/api/download-ticket', { method: 'POST' });
             const data = await res.json();
             if (data.ticket) {
-                window.location.href = `/api/download/${uuid}?ticket=${data.ticket}`;
+                document.cookie = `download_ticket=${data.ticket}; path=/api/download/${uuid}; max-age=60; samesite=strict`;
+                window.location.href = `/api/download/${uuid}`;
                 this.showToast('Decrypting and downloading...', 'success');
             } else {
                 this.showToast('Failed to get download ticket', 'error');
@@ -458,7 +805,8 @@ class CryptVaultApp {
             const res = await this.authFetch('/api/download-ticket', { method: 'POST' });
             const data = await res.json();
             if (data.ticket) {
-                window.location.href = `/api/download-folder/${uuid}?ticket=${data.ticket}`;
+                document.cookie = `download_ticket=${data.ticket}; path=/api/download-folder/${uuid}; max-age=60; samesite=strict`;
+                window.location.href = `/api/download-folder/${uuid}`;
                 this.showToast('Zipping and downloading folder...', 'success');
             } else {
                 this.showToast('Failed to get download ticket', 'error');
@@ -502,7 +850,8 @@ class CryptVaultApp {
             });
             const data = await res.json();
             if (data.ticket) {
-                window.location.href = `/api/download-multiple?ticket=${data.ticket}`;
+                document.cookie = `download_ticket=${data.ticket}; path=/api/download-multiple; max-age=60; samesite=strict`;
+                window.location.href = `/api/download-multiple`;
                 this.showToast(`Zipping and downloading ${this.selectedNodes.size} items...`, 'success');
                 // Deselect after download
                 this.selectedNodes.clear();
@@ -538,40 +887,279 @@ class CryptVaultApp {
     }
 
     // --- Uploads ---
-    async handleUploads(files) {
-        if (!files || files.length === 0) return;
+    async handleUploads(filesList) {
+        if (!filesList || filesList.length === 0) return;
         
-        this.uploadOverlay.classList.remove('hidden');
-        this.uploadTitle.textContent = files.length > 1 ? `Encrypting ${files.length} items...` : 'Encrypting File...';
+        let allFiles = Array.from(filesList);
         
-        let successCount = 0;
+        // Conflict Detection
+        const conflicts = [];
+        const cleanFiles = [];
+        const existingFiles = Object.values(this.currentFolderNodes || {}).filter(n => n.type === 'file');
         
-        for (let i = 0; i < files.length; i++) {
-            const file = files[i];
-            this.uploadFilename.textContent = file.name;
-            this.uploadProgressText.textContent = `${i + 1} / ${files.length} files`;
-            this.uploadBar.style.width = '0%';
-            this.uploadPercentage.textContent = '0%';
-            
+        allFiles.forEach(file => {
             const relativePath = file.webkitRelativePath || file._customRelativePath || '';
+            if (relativePath === '' || relativePath === file.name) {
+                const match = existingFiles.find(n => n.name === file.name);
+                if (match) {
+                    conflicts.push({ file, existingNode: match });
+                } else {
+                    cleanFiles.push(file);
+                }
+            } else {
+                cleanFiles.push(file);
+            }
+        });
+        
+        let finalFilesToUpload = [...cleanFiles];
+        
+        // Process clean files first if there are conflicts
+        if (conflicts.length > 0) {
+            if (cleanFiles.length > 0) {
+                // We'll upload clean files in the background while waiting for user input
+                this.processUploadBatch(cleanFiles, false);
+                finalFilesToUpload = []; // We handled them
+            }
             
-            try {
-                await this.uploadSingleFile(file, relativePath);
-                successCount++;
-            } catch (err) {
-                console.error('Upload failed for', file.name, err);
+            const resolutions = await this.promptConflictResolution(conflicts);
+            
+            const resolvedFiles = [];
+            for (let i = 0; i < conflicts.length; i++) {
+                const c = conflicts[i];
+                const res = resolutions[i];
+                
+                if (res === 'skip') {
+                    // Do nothing
+                } else if (res === 'keep') {
+                    const extIndex = c.file.name.lastIndexOf('.');
+                    const name = extIndex > 0 ? c.file.name.substring(0, extIndex) : c.file.name;
+                    const ext = extIndex > 0 ? c.file.name.substring(extIndex) : '';
+                    let newName = `${name} (1)${ext}`;
+                    let counter = 1;
+                    while (existingFiles.some(n => n.name === newName)) {
+                        counter++;
+                        newName = `${name} (${counter})${ext}`;
+                    }
+                    c.file._customName = newName;
+                    resolvedFiles.push(c.file);
+                } else if (res === 'replace') {
+                    this.showToast(`Replacing ${c.file.name}...`);
+                    try {
+                        await this.authFetch(`/api/nodes/${c.existingNode.id}`, { method: 'DELETE' });
+                    } catch(e) {}
+                    resolvedFiles.push(c.file);
+                }
+            }
+            
+            if (resolvedFiles.length > 0) {
+                finalFilesToUpload = finalFilesToUpload.concat(resolvedFiles);
             }
         }
         
-        setTimeout(() => {
-            this.uploadOverlay.classList.add('hidden');
-            this.showToast(`Successfully encrypted ${successCount} items`);
-            this.loadNodes(this.currentFolderId);
-        }, 500);
+        if (finalFilesToUpload.length > 0) {
+            await this.processUploadBatch(finalFilesToUpload, true);
+        } else if (cleanFiles.length === 0) {
+            // Nothing to do
+        }
+    }
+    
+    async processUploadBatch(files, showSummaryAtEnd = true) {
+        if (files.length === 0) return;
+        
+        this.uploadOverlay.classList.remove('hidden');
+        this.uploadTitle.textContent = files.length > 1 ? `Encrypting ${files.length} items...` : 'Encrypting File...';
+        this.uploadBar.style.width = '0%';
+        this.uploadPercentage.textContent = '0%';
+        
+        let completed = 0;
+        const successfulFiles = [];
+        const failedFiles = [];
+        
+        const updateProgress = () => {
+            const pct = Math.round((completed / files.length) * 100);
+            this.uploadBar.style.width = pct + '%';
+            this.uploadPercentage.textContent = pct + '%';
+            this.uploadProgressText.textContent = `${completed} / ${files.length} files`;
+        };
+        
+        updateProgress();
+        
+        const concurrency = 3;
+        let index = 0;
+        
+        const worker = async () => {
+            while (index < files.length) {
+                const i = index++;
+                const file = files[i];
+                
+                if (this.settings && this.settings.maxUploadSize && file.size > this.settings.maxUploadSize) {
+                    failedFiles.push({ name: file.name, error: 'File too large' });
+                    completed++;
+                    updateProgress();
+                    continue;
+                }
+                
+                this.uploadFilename.textContent = file._customName || file.name;
+                const relativePath = file.webkitRelativePath || file._customRelativePath || '';
+                
+                try {
+                    await this.uploadSingleFile(file, relativePath);
+                    successfulFiles.push({ name: file._customName || file.name });
+                } catch (err) {
+                    failedFiles.push({ name: file._customName || file.name, error: err.message });
+                }
+                
+                completed++;
+                updateProgress();
+            }
+        };
+        
+        const workers = [];
+        for (let i = 0; i < Math.min(concurrency, files.length); i++) workers.push(worker());
+        await Promise.all(workers);
+        
+        if (showSummaryAtEnd) {
+            setTimeout(() => {
+                this.uploadOverlay.classList.add('hidden');
+                this.showSummaryPanel(successfulFiles, failedFiles);
+                this.loadNodes(this.currentFolderId);
+            }, 500);
+        }
         
         // Reset inputs
         this.fileUploadInput.value = '';
         this.folderUploadInput.value = '';
+    }
+    
+    // --- Summary Panel ---
+    showSummaryPanel(successfulFiles, failedFiles) {
+        this.summarySuccessList.innerHTML = '';
+        this.summaryErrorList.innerHTML = '';
+        
+        this.summarySuccessCount.textContent = `(${successfulFiles.length})`;
+        this.summaryErrorCount.textContent = `(${failedFiles.length})`;
+        
+        successfulFiles.forEach(f => {
+            const li = document.createElement('li');
+            li.textContent = f.name;
+            this.summarySuccessList.appendChild(li);
+        });
+        
+        failedFiles.forEach(f => {
+            const li = document.createElement('li');
+            li.textContent = `${f.name} - ${f.error}`;
+            li.title = `${f.name} - ${f.error}`;
+            this.summaryErrorList.appendChild(li);
+        });
+        
+        // Show panel and expand details
+        this.summaryPanel.classList.remove('hidden');
+        this.summaryDetails.classList.remove('hidden');
+        this.summaryToggleIcon.classList.remove('ph-caret-down');
+        this.summaryToggleIcon.classList.add('ph-caret-up');
+    }
+    
+    toggleSummaryDetails() {
+        if (this.summaryDetails.classList.contains('hidden')) {
+            this.summaryDetails.classList.remove('hidden');
+            this.summaryToggleIcon.classList.remove('ph-caret-down');
+            this.summaryToggleIcon.classList.add('ph-caret-up');
+        } else {
+            this.summaryDetails.classList.add('hidden');
+            this.summaryToggleIcon.classList.remove('ph-caret-up');
+            this.summaryToggleIcon.classList.add('ph-caret-down');
+        }
+    }
+    
+    closeSummary() {
+        this.summaryPanel.classList.add('hidden');
+    }
+
+    promptConflictResolution(conflicts) {
+        return new Promise((resolve) => {
+            this.conflictMessage.textContent = `${conflicts.length} file(s) have names that already exist in this folder.`;
+            this.conflictListContainer.innerHTML = '';
+            
+            const selects = [];
+            
+            conflicts.forEach((c, i) => {
+                const item = document.createElement('div');
+                item.className = 'conflict-item';
+                
+                const nameSpan = document.createElement('span');
+                nameSpan.className = 'conflict-filename';
+                nameSpan.textContent = c.file.name;
+                nameSpan.title = c.file.name;
+                
+                const btnGroup = document.createElement('div');
+                btnGroup.className = 'conflict-btn-group';
+                btnGroup.style.display = 'flex';
+                btnGroup.style.gap = '0.25rem';
+                
+                const btnSkip = document.createElement('button');
+                btnSkip.className = 'btn btn-secondary btn-sm active-conflict-btn';
+                btnSkip.textContent = 'Skip';
+                
+                const btnKeep = document.createElement('button');
+                btnKeep.className = 'btn btn-secondary btn-sm';
+                btnKeep.textContent = 'Keep Both';
+                
+                const btnReplace = document.createElement('button');
+                btnReplace.className = 'btn btn-secondary btn-sm';
+                btnReplace.textContent = 'Replace';
+                
+                const state = { value: 'skip' };
+                selects.push(state);
+
+                const updateBtns = (val) => {
+                    state.value = val;
+                    btnSkip.classList.toggle('active-conflict-btn', val === 'skip');
+                    btnKeep.classList.toggle('active-conflict-btn', val === 'keep');
+                    btnReplace.classList.toggle('active-conflict-btn', val === 'replace');
+                };
+
+                state.updateUI = updateBtns;
+
+                btnSkip.onclick = () => updateBtns('skip');
+                btnKeep.onclick = () => updateBtns('keep');
+                btnReplace.onclick = () => updateBtns('replace');
+                
+                btnGroup.appendChild(btnSkip);
+                btnGroup.appendChild(btnKeep);
+                btnGroup.appendChild(btnReplace);
+                
+                item.appendChild(nameSpan);
+                item.appendChild(btnGroup);
+                this.conflictListContainer.appendChild(item);
+            });
+            
+            this.conflictModal.classList.remove('hidden');
+            
+            const handleApply = () => {
+                this.conflictModal.classList.add('hidden');
+                cleanup();
+                const results = selects.map(s => s.value);
+                resolve(results);
+            };
+            
+            const handleGlobal = (val) => {
+                selects.forEach(s => s.updateUI(val));
+            };
+            
+            const cleanup = () => {
+                this.conflictSkipBtn.onclick = null;
+                this.conflictKeepBtn.onclick = null;
+                this.conflictReplaceBtn.onclick = null;
+                this.conflictApplyBtn.onclick = null;
+                this.pendingConflictResolution = null;
+            };
+            
+            this.pendingConflictResolution = () => { cleanup(); resolve(conflicts.map(() => 'skip')); };
+            this.conflictSkipBtn.onclick = () => handleGlobal('skip');
+            this.conflictKeepBtn.onclick = () => handleGlobal('keep');
+            this.conflictReplaceBtn.onclick = () => handleGlobal('replace');
+            this.conflictApplyBtn.onclick = handleApply;
+        });
     }
 
     uploadSingleFile(file, relativePath) {
@@ -582,22 +1170,30 @@ class CryptVaultApp {
             formData.append('parentId', this.currentFolderId);
             formData.append('relativePath', relativePath);
             formData.append('file', file);
+            if (file._customName) {
+                formData.append('originalname', file._customName);
+            }
             
             const xhr = new XMLHttpRequest();
             xhr.open('POST', '/api/upload', true);
             xhr.setRequestHeader('Authorization', `Bearer ${this.token}`);
             
-            xhr.upload.onprogress = (e) => {
-                if (e.lengthComputable) {
-                    const percentComplete = Math.round((e.loaded / e.total) * 100);
-                    this.uploadBar.style.width = percentComplete + '%';
-                    this.uploadPercentage.textContent = percentComplete + '%';
-                }
-            };
+            // Remove individual file progress to prevent racing progress bars
+            // xhr.upload.onprogress = (e) => { ... };
             
             xhr.onload = () => {
-                if (xhr.status === 200) resolve();
-                else reject(new Error(xhr.responseText));
+                if (xhr.status === 200) {
+                    resolve();
+                } else {
+                    let errMsg = 'Upload failed';
+                    try {
+                        const data = JSON.parse(xhr.responseText);
+                        if (data.error) errMsg = data.error;
+                    } catch (e) {
+                        errMsg = xhr.statusText || 'Upload failed';
+                    }
+                    reject(new Error(errMsg));
+                }
             };
             
             xhr.onerror = () => reject(new Error('Network error'));
@@ -678,4 +1274,4 @@ document.addEventListener('click', () => {
 });
 
 // Initialize App
-const app = new CryptVaultApp();
+window.app = new CryptVaultApp();

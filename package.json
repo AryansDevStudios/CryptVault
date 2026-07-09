@@ -1,21 +1,24 @@
 {
-  "name": "aes-256_web",
-  "version": "1.0.0",
-  "description": "",
+  "name": "CryptVault",
+  "version": "1.1.0",
+  "description": "A zero-trust, encrypted file storage, with highest-grade security.",
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
-  "author": "",
+  "author": "Aryan Gupta",
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
+    "@phosphor-icons/web": "^2.1.2",
     "archiver": "^8.0.0",
     "bcryptjs": "^3.0.3",
     "cookie-parser": "^1.4.7",
-    "dotenv": "^17.4.2",
     "express": "^5.2.1",
+    "express-rate-limit": "^8.5.2",
+    "helmet": "^8.2.0",
+    "jsdom": "^29.1.1",
     "multer": "^2.2.0"
   }
 }
