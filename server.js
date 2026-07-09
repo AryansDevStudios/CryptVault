@@ -13,6 +13,48 @@ const { logAudit } = require('./logger');
 
 const app = express();
 
+// --- Config Manager ---
+const CONFIG_PATH = path.join(__dirname, 'config.json');
+
+let globalConfig = {
+    network: {
+        port: 3000,
+        host: "0.0.0.0",
+        trustProxy: false,
+        tls: { enabled: false, certPath: "", keyPath: "" }
+    },
+    security: {} // empty on fresh setup
+};
+
+function loadConfig() {
+    if (fs.existsSync(CONFIG_PATH)) {
+        try {
+            const data = fs.readFileSync(CONFIG_PATH, 'utf8');
+            globalConfig = JSON.parse(data);
+        } catch (err) {
+            console.error("Failed to parse config.json:", err);
+        }
+    }
+    
+    // Apply network config immediately
+    if (globalConfig.network && globalConfig.network.trustProxy) {
+        app.set('trust proxy', 1);
+    }
+}
+loadConfig();
+
+function saveConfig(updates) {
+    if (updates.security) {
+        globalConfig.security = { ...globalConfig.security, ...updates.security };
+    }
+    if (updates.network) {
+        globalConfig.network = { ...globalConfig.network, ...updates.network };
+    }
+    const tempConfigPath = CONFIG_PATH + '.tmp';
+    fs.writeFileSync(tempConfigPath, JSON.stringify(globalConfig, null, 2), 'utf8');
+    fs.renameSync(tempConfigPath, CONFIG_PATH);
+}
+
 app.use(express.json({ limit: '1mb' }));
 app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 
@@ -276,47 +318,6 @@ const authMiddleware = (req, res, next) => {
     next();
 };
 
-// --- Config Manager ---
-const CONFIG_PATH = path.join(__dirname, 'config.json');
-
-let globalConfig = {
-    network: {
-        port: 3000,
-        host: "0.0.0.0",
-        trustProxy: false,
-        tls: { enabled: false, certPath: "", keyPath: "" }
-    },
-    security: {} // empty on fresh setup
-};
-
-function loadConfig() {
-    if (fs.existsSync(CONFIG_PATH)) {
-        try {
-            const data = fs.readFileSync(CONFIG_PATH, 'utf8');
-            globalConfig = JSON.parse(data);
-        } catch (err) {
-            console.error("Failed to parse config.json:", err);
-        }
-    }
-    
-    // Apply network config immediately
-    if (globalConfig.network && globalConfig.network.trustProxy) {
-        app.set('trust proxy', 1);
-    }
-}
-loadConfig();
-
-function saveConfig(updates) {
-    if (updates.security) {
-        globalConfig.security = { ...globalConfig.security, ...updates.security };
-    }
-    if (updates.network) {
-        globalConfig.network = { ...globalConfig.network, ...updates.network };
-    }
-    const tempConfigPath = CONFIG_PATH + '.tmp';
-    fs.writeFileSync(tempConfigPath, JSON.stringify(globalConfig, null, 2), 'utf8');
-    fs.renameSync(tempConfigPath, CONFIG_PATH);
-}
 
 function checkPasswordStrength(password) {
     if (password.length < 12) return 'Password must be at least 12 characters long.';
