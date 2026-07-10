@@ -438,6 +438,8 @@ class CryptVaultApp {
     async handleSetup() {
         const password = this.setupPasswordInput.value;
         const confirm = this.setupConfirmInput.value;
+        const deployEnvEl = document.querySelector('input[name="deploy_env"]:checked');
+        const deployEnv = deployEnvEl ? deployEnvEl.value : 'local';
         
         if (password !== confirm) {
             this.setupError.textContent = 'Passwords do not match';
@@ -449,7 +451,7 @@ class CryptVaultApp {
             const res = await fetch('/api/setup', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ password })
+                body: JSON.stringify({ password, deployEnv })
             });
             const data = await res.json();
             
