@@ -505,6 +505,16 @@
                     <button class="btn-icon" id="btn-close-audit" title="Close"><i class="ph ph-x"></i></button>
                 </div>
             </div>
+            <div class="flex flex-wrap gap-4 mb-4 text-sm items-center" id="audit-filters">
+                <span class="font-bold">Filters:</span>
+                <label class="flex items-center gap-1 cursor-pointer"><input type="checkbox" value="VIEW" checked class="audit-filter-cb"> File View</label>
+                <label class="flex items-center gap-1 cursor-pointer"><input type="checkbox" value="LOGIN" checked class="audit-filter-cb"> Login</label>
+                <label class="flex items-center gap-1 cursor-pointer"><input type="checkbox" value="DOWNLOAD" checked class="audit-filter-cb"> Download</label>
+                <label class="flex items-center gap-1 cursor-pointer"><input type="checkbox" value="DELETE" checked class="audit-filter-cb"> Delete</label>
+                <label class="flex items-center gap-1 cursor-pointer"><input type="checkbox" value="UPLOAD" checked class="audit-filter-cb"> Upload</label>
+                <label class="flex items-center gap-1 cursor-pointer"><input type="checkbox" value="SETTINGS" checked class="audit-filter-cb"> Settings</label>
+                <label class="flex items-center gap-1 cursor-pointer"><input type="checkbox" value="OTHER" checked class="audit-filter-cb"> Other</label>
+            </div>
             <div class="table-container" style="max-height: 60vh; overflow-y: auto;">
                 <table style="width: 100%; text-align: left; font-size: 0.9em; border-collapse: collapse;">
                     <thead>

@@ -786,83 +786,113 @@ class CryptVaultApp {
         try {
             const res = await this.authFetch('/api/settings/audit');
             const data = await res.json();
-            const tbody = document.getElementById('audit-log-body');
-            tbody.innerHTML = '';
             
             if (data.logs && data.logs.length > 0) {
-                // Reverse to show newest first
-                data.logs.reverse().forEach(log => {
-                    const tr = document.createElement('tr');
-                    tr.style.borderBottom = '1px solid var(--border-color)';
-                    
-                    const tdTime = document.createElement('td');
-                    tdTime.style.padding = '8px';
-                    tdTime.textContent = new Date(log.timestamp).toLocaleString();
-                    
-                    const tdAction = document.createElement('td');
-                    tdAction.style.padding = '8px';
-                    tdAction.textContent = log.action;
-                    
-                    const tdIp = document.createElement('td');
-                    tdIp.style.padding = '8px';
-                    tdIp.textContent = log.ip || 'unknown';
-                    
-                    const tdDetails = document.createElement('td');
-                    tdDetails.style.padding = '8px';
-                    tdDetails.style.fontSize = '0.85em';
-                    tdDetails.style.opacity = '0.8';
-                    const detailsObj = { ...log };
-                    delete detailsObj.timestamp;
-                    delete detailsObj.action;
-                    delete detailsObj.ip;
-                    delete detailsObj.hash;
-                    delete detailsObj.prevHash;
-                    if (Object.keys(detailsObj).length > 0) {
-                        const btn = document.createElement('button');
-                        btn.className = 'btn btn-secondary btn-sm';
-                        btn.style.padding = '2px 8px';
-                        btn.style.fontSize = '0.9em';
-                        btn.textContent = 'View Info';
-                        btn.onclick = () => {
-                            document.getElementById('audit-details-content').textContent = JSON.stringify(detailsObj, null, 2);
-                            document.getElementById('audit-details-modal').classList.remove('hidden');
-                        };
-                        tdDetails.appendChild(btn);
-                    } else {
-                        tdDetails.textContent = '-';
-                        tdDetails.style.textAlign = 'center';
-                    }
-
-                    const tdHash = document.createElement('td');
-                    tdHash.style.padding = '8px';
-                    tdHash.style.fontFamily = 'monospace';
-                    tdHash.style.fontSize = '0.85em';
-                    tdHash.textContent = log.hash ? log.hash.substring(0, 12) + '...' : 'N/A';
-                    tdHash.title = `Hash: ${log.hash || 'N/A'}\nPrev: ${log.prevHash || 'N/A'}`;
-                    
-                    tr.appendChild(tdTime);
-                    tr.appendChild(tdAction);
-                    tr.appendChild(tdIp);
-                    tr.appendChild(tdDetails);
-                    tr.appendChild(tdHash);
-                    tbody.appendChild(tr);
-                });
+                this.auditLogs = data.logs.reverse();
             } else {
-                const tr = document.createElement('tr');
-                const td = document.createElement('td');
-                td.colSpan = 5;
-                td.style.padding = '8px';
-                td.style.textAlign = 'center';
-                td.style.fontStyle = 'italic';
-                td.textContent = 'No audit logs found.';
-                tr.appendChild(td);
-                tbody.appendChild(tr);
+                this.auditLogs = [];
             }
             
+            // Add listeners to checkboxes if not added
+            if (!this.auditFilterInitialized) {
+                document.querySelectorAll('.audit-filter-cb').forEach(cb => {
+                    cb.addEventListener('change', () => this.renderAuditLogs());
+                });
+                this.auditFilterInitialized = true;
+            }
+            
+            this.renderAuditLogs();
             document.getElementById('audit-modal').classList.remove('hidden');
         } catch (e) {
             this.showToast('Failed to load audit logs', 'error');
         }
+    }
+
+    renderAuditLogs() {
+        const tbody = document.getElementById('audit-log-body');
+        tbody.innerHTML = '';
+        
+        if (!this.auditLogs || this.auditLogs.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; padding: 12px; opacity: 0.7;">No audit logs available.</td></tr>';
+            return;
+        }
+
+        const activeFilters = Array.from(document.querySelectorAll('.audit-filter-cb'))
+            .filter(cb => cb.checked)
+            .map(cb => cb.value);
+
+        const filteredLogs = this.auditLogs.filter(log => {
+            const act = log.action;
+            if (act === 'PREVIEW_FILE') return activeFilters.includes('VIEW');
+            if (act.startsWith('LOGIN') || act === 'LOGOUT') return activeFilters.includes('LOGIN');
+            if (act === 'DOWNLOAD_FILE' || act === 'DOWNLOAD_FOLDER') return activeFilters.includes('DOWNLOAD');
+            if (act === 'DELETE_NODE') return activeFilters.includes('DELETE');
+            if (act === 'UPLOAD_FILE') return activeFilters.includes('UPLOAD');
+            if (act.includes('SETTINGS') || act === 'PASSWORD_CHANGED') return activeFilters.includes('SETTINGS');
+            return activeFilters.includes('OTHER'); // Fallback for VAULT_SETUP, CREATE_FOLDER, etc.
+        });
+
+        if (filteredLogs.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; padding: 12px; opacity: 0.7;">No logs match the selected filters.</td></tr>';
+            return;
+        }
+
+        filteredLogs.forEach(log => {
+            const tr = document.createElement('tr');
+            tr.style.borderBottom = '1px solid var(--border-color)';
+            
+            const tdTime = document.createElement('td');
+            tdTime.style.padding = '8px';
+            tdTime.textContent = new Date(log.timestamp).toLocaleString();
+            
+            const tdAction = document.createElement('td');
+            tdAction.style.padding = '8px';
+            tdAction.textContent = log.action;
+            
+            const tdIp = document.createElement('td');
+            tdIp.style.padding = '8px';
+            tdIp.textContent = log.ip || 'unknown';
+            
+            const tdDetails = document.createElement('td');
+            tdDetails.style.padding = '8px';
+            tdDetails.style.fontSize = '0.85em';
+            tdDetails.style.opacity = '0.8';
+            const detailsObj = { ...log };
+            delete detailsObj.timestamp;
+            delete detailsObj.action;
+            delete detailsObj.ip;
+            delete detailsObj.hash;
+            delete detailsObj.prevHash;
+            if (Object.keys(detailsObj).length > 0) {
+                const btn = document.createElement('button');
+                btn.className = 'btn btn-secondary btn-sm';
+                btn.style.padding = '2px 8px';
+                btn.style.fontSize = '0.9em';
+                btn.textContent = 'View Info';
+                btn.onclick = () => {
+                    document.getElementById('audit-details-content').textContent = JSON.stringify(detailsObj, null, 2);
+                    document.getElementById('audit-details-modal').classList.remove('hidden');
+                };
+                tdDetails.appendChild(btn);
+            } else {
+                tdDetails.textContent = '-';
+                tdDetails.style.textAlign = 'center';
+            }
+
+            const tdHash = document.createElement('td');
+            tdHash.style.padding = '8px';
+            tdHash.style.fontFamily = 'monospace';
+            tdHash.style.fontSize = '0.85em';
+            tdHash.textContent = log.hash ? log.hash.substring(0, 12) + '...' : 'N/A';
+            tdHash.title = `Hash: ${log.hash || 'N/A'}\nPrev: ${log.prevHash || 'N/A'}`;
+            
+            tr.appendChild(tdTime);
+            tr.appendChild(tdAction);
+            tr.appendChild(tdIp);
+            tr.appendChild(tdDetails);
+            tr.appendChild(tdHash);
+            tbody.appendChild(tr);
+        });
     }
 
     async downloadAuditLog() {
