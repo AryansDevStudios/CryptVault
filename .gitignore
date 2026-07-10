@@ -5,7 +5,6 @@ uploads/
 npm-debug.log*
 yarn-error.log*
 .DS_Store
-package-lock.json
 
 # Generated configuration and databases
 config.json
