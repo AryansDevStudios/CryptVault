@@ -6,64 +6,70 @@
     --font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     
     /* Animation Tokens */
-    --transition-fast: 0.15s ease;
-    --transition-base: 0.25s ease;
-    --transition-slow: 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+    --transition-fast: 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+    --transition-base: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    --transition-slow: 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+    --transition-bounce: 0.5s cubic-bezier(0.68, -0.55, 0.265, 1.55);
 }
 
 /* Light Theme Variables */
 [data-theme="light"] {
-    --color-bg-base: #f8fafc;
-    --color-bg-glass: rgba(255, 255, 255, 0.95);
-    --color-bg-glass-hover: #ffffff;
+    --color-bg-base: hsl(210, 33%, 98%);
+    --color-bg-glass: rgba(255, 255, 255, 0.6);
+    --color-bg-glass-hover: rgba(255, 255, 255, 0.8);
     
-    --color-text-main: #0f172a;
-    --color-text-muted: #475569;
-    --color-border: rgba(15, 23, 42, 0.1);
+    --color-text-main: hsl(222, 47%, 11%);
+    --color-text-muted: hsl(215, 16%, 47%);
+    --color-border: rgba(15, 23, 42, 0.08);
     
-    --color-primary: #6366f1;
-    --color-primary-hover: #4f46e5;
-    --color-primary-light: rgba(99, 102, 241, 0.1);
+    --color-primary: hsl(243, 75%, 59%);
+    --color-primary-hover: hsl(243, 75%, 52%);
+    --color-primary-light: hsla(243, 75%, 59%, 0.15);
+    --color-primary-lighten: hsl(243, 100%, 75%);
     
-    --color-secondary: #0ea5e9;
-    --color-success: #10b981;
-    --color-danger: #ef4444;
-    --color-danger-hover: #dc2626;
+    --color-secondary: hsl(186, 100%, 42%);
+    --color-success: hsl(152, 69%, 45%);
+    --color-danger: hsl(348, 83%, 58%);
+    --color-danger-hover: hsl(348, 83%, 50%);
     
-    --shadow-glass: 0 10px 40px -10px rgba(0, 0, 0, 0.08);
-    --shadow-sm: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
-    --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+    --shadow-glass: 0 8px 32px 0 rgba(31, 38, 135, 0.07);
+    --shadow-sm: 0 2px 8px 0 rgba(31, 38, 135, 0.05);
+    --shadow-md: 0 8px 16px -4px rgba(31, 38, 135, 0.08);
     
-    --glow-primary: radial-gradient(circle, rgba(99,102,241,0.4) 0%, rgba(99,102,241,0) 70%);
-    --glow-secondary: radial-gradient(circle, rgba(14,165,233,0.4) 0%, rgba(14,165,233,0) 70%);
+    --glow-primary: radial-gradient(circle, hsla(243, 75%, 59%, 0.3) 0%, hsla(243, 75%, 59%, 0) 70%);
+    --glow-secondary: radial-gradient(circle, hsla(186, 100%, 42%, 0.25) 0%, hsla(186, 100%, 42%, 0) 70%);
+    
+    --glass-border: 1px solid rgba(255, 255, 255, 0.5);
 }
 
 /* Dark Theme Variables */
 [data-theme="dark"] {
-    --color-bg-base: #09090b;
-    --color-bg-glass: rgba(24, 24, 27, 0.7);
-    --color-bg-glass-hover: rgba(39, 39, 42, 0.85);
+    --color-bg-base: hsl(240, 10%, 4%);
+    --color-bg-glass: rgba(18, 18, 20, 0.55);
+    --color-bg-glass-hover: rgba(28, 28, 32, 0.7);
     
-    --color-text-main: #f8fafc;
-    --color-text-muted: #94a3b8;
-    --color-border: rgba(255, 255, 255, 0.15);
+    --color-text-main: hsl(0, 0%, 98%);
+    --color-text-muted: hsl(240, 5%, 65%);
+    --color-border: rgba(255, 255, 255, 0.08);
     
-    --color-primary: #818cf8;
-    --color-primary-hover: #a5b4fc;
-    --color-primary-light: rgba(129, 140, 248, 0.2);
-    --color-primary-lighten: #a5b4fc;
+    --color-primary: hsl(252, 100%, 73%);
+    --color-primary-hover: hsl(252, 100%, 80%);
+    --color-primary-light: hsla(252, 100%, 73%, 0.15);
+    --color-primary-lighten: hsl(252, 100%, 85%);
     
-    --color-secondary: #38bdf8;
-    --color-success: #34d399;
-    --color-danger: #fb7185;
-    --color-danger-hover: #f43f5e;
+    --color-secondary: hsl(190, 100%, 65%);
+    --color-success: hsl(150, 100%, 65%);
+    --color-danger: hsl(350, 100%, 70%);
+    --color-danger-hover: hsl(350, 100%, 75%);
     
-    --shadow-glass: 0 20px 40px -10px rgba(0, 0, 0, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.1);
-    --shadow-sm: 0 2px 4px 0 rgba(0, 0, 0, 0.4);
-    --shadow-md: 0 8px 12px -2px rgba(0, 0, 0, 0.5);
+    --shadow-glass: 0 16px 40px 0 rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+    --shadow-sm: 0 4px 12px 0 rgba(0, 0, 0, 0.2);
+    --shadow-md: 0 12px 24px -4px rgba(0, 0, 0, 0.3);
     
-    --glow-primary: radial-gradient(circle, rgba(129,140,248,0.5) 0%, rgba(129,140,248,0) 70%);
-    --glow-secondary: radial-gradient(circle, rgba(56,189,248,0.5) 0%, rgba(56,189,248,0) 70%);
+    --glow-primary: radial-gradient(circle, hsla(252, 100%, 73%, 0.35) 0%, hsla(252, 100%, 73%, 0) 70%);
+    --glow-secondary: radial-gradient(circle, hsla(190, 100%, 65%, 0.3) 0%, hsla(190, 100%, 65%, 0) 70%);
+    
+    --glass-border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 /* ==========================================================================
@@ -192,16 +198,16 @@ body {
 
 .glass {
     background: var(--color-bg-glass);
-    backdrop-filter: blur(24px);
-    -webkit-backdrop-filter: blur(24px);
-    border: 1px solid var(--color-border);
+    backdrop-filter: blur(32px) saturate(150%);
+    -webkit-backdrop-filter: blur(32px) saturate(150%);
+    border: var(--glass-border);
     box-shadow: var(--shadow-glass);
     border-radius: 1.5rem;
-    transition: background var(--transition-base), border-color var(--transition-base), box-shadow var(--transition-base);
+    transition: background var(--transition-base), border-color var(--transition-base), box-shadow var(--transition-base), transform var(--transition-base);
 }
 
 .glass:hover {
-    box-shadow: var(--shadow-glass), 0 0 20px var(--color-primary-light);
+    box-shadow: var(--shadow-glass), 0 0 30px var(--color-primary-light);
 }
 
 .app-container {
@@ -366,7 +372,7 @@ input:focus {
     font-size: 0.95rem;
     font-weight: 600;
     cursor: pointer;
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    transition: transform var(--transition-bounce), background var(--transition-base), box-shadow var(--transition-base), color var(--transition-base);
     white-space: nowrap;
     position: relative;
     overflow: hidden;
@@ -377,10 +383,14 @@ input:focus {
     top: 0; left: 0; width: 100%; height: 100%;
     background: linear-gradient(rgba(255,255,255,0.1), transparent);
     opacity: 0;
-    transition: opacity 0.3s;
+    transition: opacity var(--transition-base);
 }
 .btn:hover::after {
     opacity: 1;
+}
+
+.btn:active {
+    transform: scale(0.95);
 }
 
 .btn-sm {
@@ -396,10 +406,12 @@ input:focus {
     height: 40px;
     background: transparent;
     color: var(--color-text-main);
+    transition: all var(--transition-bounce);
 }
 
 .btn-icon:hover {
     background: var(--color-border);
+    transform: scale(1.1);
 }
 
 .btn-primary {
@@ -413,11 +425,11 @@ input:focus {
 .btn-primary:hover {
     transform: translateY(-2px);
     box-shadow: 0 10px 20px -5px var(--color-primary-light), var(--shadow-md), inset 0 1px 0 rgba(255,255,255,0.2);
-    background: linear-gradient(135deg, var(--color-primary-hover) 0%, #4338ca 100%);
+    background: linear-gradient(135deg, var(--color-primary-hover) 0%, var(--color-primary) 100%);
 }
 
 .btn-primary i {
-    transition: transform 0.2s;
+    transition: transform var(--transition-bounce);
 }
 
 .btn-primary:hover i {
@@ -425,7 +437,7 @@ input:focus {
 }
 
 .btn-primary:active {
-    transform: translateY(0);
+    transform: translateY(0) scale(0.95);
 }
 
 .btn-secondary {
@@ -759,12 +771,13 @@ input:focus {
     align-items: center;
     border-radius: 0.75rem;
     margin-bottom: 0.25rem;
-    transition: background var(--transition-fast);
+    transition: background var(--transition-fast), transform var(--transition-bounce), box-shadow var(--transition-base);
     cursor: pointer;
     animation: fadeUp 0.4s cubic-bezier(0.4, 0, 0.2, 1) both;
     position: relative; /* Ensure it establishes stacking context if needed */
     z-index: 1;
     transform-origin: center;
+    border: 1px solid transparent;
 }
 
 @keyframes fadeUp {
@@ -773,14 +786,16 @@ input:focus {
 }
 
 .file-item:hover {
-    background: var(--color-border);
-    transform: scale(1.01);
+    background: var(--color-bg-glass-hover);
+    border-color: var(--color-border);
+    transform: scale(1.01) translateY(-2px);
     box-shadow: var(--shadow-md);
     z-index: 2;
 }
 
 .file-item.selected {
     background: var(--color-primary-light);
+    border-color: var(--color-primary);
 }
 
 .item-name {
@@ -1262,8 +1277,8 @@ input:focus {
     }
     .list-header, .file-item {
         grid-template-columns: 1fr 60px;
-        padding: 0.5rem 1rem;
-        font-size: 0.85rem;
+        padding: 0.75rem 1rem; /* Larger tap targets */
+        font-size: 0.95rem; /* Better readability */
     }
     
     body.mobile-selection-active .col-checkbox {
@@ -1281,10 +1296,11 @@ input:focus {
 
     /* Floating Action Bar */
     .floating-action-bar {
-        width: 90%;
+        width: 95%;
         max-width: 400px;
-        padding: 0.5rem 1rem;
+        padding: 0.75rem 1rem;
         justify-content: space-between;
+        bottom: 1rem;
     }
     .bulk-actions-buttons {
         display: flex;
@@ -1301,16 +1317,17 @@ input:focus {
         max-height: 95vh;
         display: flex;
         flex-direction: column;
+        border-radius: 1.25rem;
     }
     .modal-body {
-        padding: 1rem;
+        padding: 1.25rem;
     }
     .modal-body-scroll {
         max-height: 70vh;
     }
     .settings-modal-wide .flex.gap-4 {
         flex-direction: column;
-        gap: 0.75rem;
+        gap: 1rem;
     }
     
     /* Upload Summary */
