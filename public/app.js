@@ -153,6 +153,10 @@ class CryptVaultApp {
         document.getElementById('btn-close-audit').addEventListener('click', () => {
             document.getElementById('audit-modal').classList.add('hidden');
         });
+        document.getElementById('btn-download-audit').addEventListener('click', () => this.downloadAuditLog());
+        document.getElementById('btn-close-audit-details').addEventListener('click', () => {
+            document.getElementById('audit-details-modal').classList.add('hidden');
+        });
         
         // Close modals on generic close buttons
         document.querySelectorAll('.modal-close').forEach(btn => {
@@ -813,9 +817,21 @@ class CryptVaultApp {
                     delete detailsObj.ip;
                     delete detailsObj.hash;
                     delete detailsObj.prevHash;
-                    const detailsStr = Object.keys(detailsObj).length > 0 ? JSON.stringify(detailsObj) : '-';
-                    tdDetails.textContent = detailsStr.length > 40 ? detailsStr.substring(0, 40) + '...' : detailsStr;
-                    tdDetails.title = detailsStr;
+                    if (Object.keys(detailsObj).length > 0) {
+                        const btn = document.createElement('button');
+                        btn.className = 'btn btn-secondary btn-sm';
+                        btn.style.padding = '2px 8px';
+                        btn.style.fontSize = '0.9em';
+                        btn.textContent = 'View Info';
+                        btn.onclick = () => {
+                            document.getElementById('audit-details-content').textContent = JSON.stringify(detailsObj, null, 2);
+                            document.getElementById('audit-details-modal').classList.remove('hidden');
+                        };
+                        tdDetails.appendChild(btn);
+                    } else {
+                        tdDetails.textContent = '-';
+                        tdDetails.style.textAlign = 'center';
+                    }
 
                     const tdHash = document.createElement('td');
                     tdHash.style.padding = '8px';
@@ -846,6 +862,27 @@ class CryptVaultApp {
             document.getElementById('audit-modal').classList.remove('hidden');
         } catch (e) {
             this.showToast('Failed to load audit logs', 'error');
+        }
+    }
+
+    async downloadAuditLog() {
+        try {
+            const res = await this.authFetch('/api/settings/audit');
+            const data = await res.json();
+            if (!data.logs) return;
+            
+            const fileContent = data.logs.map(log => JSON.stringify(log)).join('\n');
+            const blob = new Blob([fileContent], { type: 'text/plain' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `audit_${new Date().toISOString().split('T')[0]}.log`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        } catch (e) {
+            this.showToast('Failed to download audit logs', 'error');
         }
     }
 

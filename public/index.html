@@ -499,7 +499,10 @@
         <div class="custom-modal glass" style="max-width: 900px; width: 95%;">
             <div class="flex justify-between items-center mb-4 pb-2" style="border-bottom: 1px solid var(--border-color);">
                 <h3>Audit Log History</h3>
-                <button class="btn-icon" id="btn-close-audit" title="Close"><i class="ph ph-x"></i></button>
+                <div class="flex gap-2 items-center">
+                    <button class="btn btn-secondary btn-sm flex items-center gap-1" id="btn-download-audit" title="Download Audit Log"><i class="ph ph-download-simple"></i> Download</button>
+                    <button class="btn-icon" id="btn-close-audit" title="Close"><i class="ph ph-x"></i></button>
+                </div>
             </div>
             <div class="table-container" style="max-height: 60vh; overflow-y: auto;">
                 <table style="width: 100%; text-align: left; font-size: 0.9em; border-collapse: collapse;">
@@ -517,6 +520,17 @@
                     </tbody>
                 </table>
             </div>
+        </div>
+    </div>
+
+    <!-- Audit Details Modal -->
+    <div id="audit-details-modal" class="overlay hidden modal-overlay" style="z-index: 1000;">
+        <div class="custom-modal glass" style="max-width: 500px; width: 90%;">
+            <div class="flex justify-between items-center mb-4 pb-2" style="border-bottom: 1px solid var(--border-color);">
+                <h3>Log Details</h3>
+                <button class="btn-icon" id="btn-close-audit-details" title="Close"><i class="ph ph-x"></i></button>
+            </div>
+            <pre id="audit-details-content" style="background: rgba(0,0,0,0.2); padding: 10px; border-radius: 4px; overflow-x: auto; font-size: 0.85em; white-space: pre-wrap; word-wrap: break-word;"></pre>
         </div>
     </div>
 
