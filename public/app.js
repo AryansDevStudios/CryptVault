@@ -803,6 +803,20 @@ class CryptVaultApp {
                     tdIp.style.padding = '8px';
                     tdIp.textContent = log.ip || 'unknown';
                     
+                    const tdDetails = document.createElement('td');
+                    tdDetails.style.padding = '8px';
+                    tdDetails.style.fontSize = '0.85em';
+                    tdDetails.style.opacity = '0.8';
+                    const detailsObj = { ...log };
+                    delete detailsObj.timestamp;
+                    delete detailsObj.action;
+                    delete detailsObj.ip;
+                    delete detailsObj.hash;
+                    delete detailsObj.prevHash;
+                    const detailsStr = Object.keys(detailsObj).length > 0 ? JSON.stringify(detailsObj) : '-';
+                    tdDetails.textContent = detailsStr.length > 40 ? detailsStr.substring(0, 40) + '...' : detailsStr;
+                    tdDetails.title = detailsStr;
+
                     const tdHash = document.createElement('td');
                     tdHash.style.padding = '8px';
                     tdHash.style.fontFamily = 'monospace';
@@ -813,13 +827,14 @@ class CryptVaultApp {
                     tr.appendChild(tdTime);
                     tr.appendChild(tdAction);
                     tr.appendChild(tdIp);
+                    tr.appendChild(tdDetails);
                     tr.appendChild(tdHash);
                     tbody.appendChild(tr);
                 });
             } else {
                 const tr = document.createElement('tr');
                 const td = document.createElement('td');
-                td.colSpan = 4;
+                td.colSpan = 5;
                 td.style.padding = '8px';
                 td.style.textAlign = 'center';
                 td.style.fontStyle = 'italic';
