@@ -1093,12 +1093,19 @@ input:focus {
     border: 3px dashed var(--color-primary);
     border-radius: 1rem;
     transition: opacity var(--transition-base);
+    pointer-events: none;
 }
 
 .dropzone-icon {
     font-size: 4rem;
     color: var(--color-primary);
     margin-bottom: 1rem;
+}
+
+.file-item.drag-hover {
+    background: var(--color-bg-glass-hover);
+    border-color: var(--color-primary);
+    box-shadow: 0 0 10px rgba(var(--color-primary-rgb), 0.3);
 }
 
 /* Upload Summary Panel */

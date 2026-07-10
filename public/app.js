@@ -185,19 +185,44 @@ class CryptVaultApp {
             });
         });
 
-        document.body.addEventListener('dragenter', () => {
+        document.body.addEventListener('dragenter', (e) => {
             if (this.dashboardView.classList.contains('active-view')) {
                 this.dropzone.classList.remove('hidden');
             }
         });
 
-        this.dropzone.addEventListener('dragleave', (e) => {
-            if (e.target === this.dropzone) {
-                this.dropzone.classList.add('hidden');
+        document.body.addEventListener('dragover', (e) => {
+            document.querySelectorAll('.file-item.drag-hover').forEach(el => el.classList.remove('drag-hover'));
+            const targetEl = e.target.closest('.file-item');
+            if (targetEl && targetEl.dataset.type === 'folder') {
+                targetEl.classList.add('drag-hover');
+                const nameSpan = targetEl.querySelector('.item-name span:last-child');
+                const name = nameSpan ? nameSpan.textContent : 'folder';
+                this.dropzone.querySelector('h3').textContent = `Drop to Upload into ${name}`;
+            } else {
+                this.dropzone.querySelector('h3').textContent = `Drop to Upload`;
             }
         });
 
-        this.dropzone.addEventListener('drop', (e) => this.handleDrop(e));
+        document.body.addEventListener('dragleave', (e) => {
+            if (!e.relatedTarget || e.relatedTarget.nodeName === 'HTML') {
+                this.dropzone.classList.add('hidden');
+                document.querySelectorAll('.file-item.drag-hover').forEach(el => el.classList.remove('drag-hover'));
+            }
+        });
+
+        document.body.addEventListener('drop', (e) => {
+            if (this.dashboardView.classList.contains('active-view') && !this.dropzone.classList.contains('hidden')) {
+                this.handleDrop(e);
+            }
+        });
+
+        // Paste to Upload
+        document.addEventListener('paste', (e) => {
+            if (this.dashboardView.classList.contains('active-view') && e.clipboardData && e.clipboardData.files.length > 0) {
+                this.handleUploads(e.clipboardData.files, this.currentFolderId);
+            }
+        });
 
         // Bulk Actions
         document.getElementById('btn-bulk-download').addEventListener('click', () => this.downloadSelected());
@@ -1436,7 +1461,7 @@ class CryptVaultApp {
     }
 
     // --- Uploads ---
-    async handleUploads(filesList) {
+    async handleUploads(filesList, targetFolderId = this.currentFolderId) {
         if (!filesList || filesList.length === 0) return;
         
         let allFiles = Array.from(filesList);
@@ -1463,7 +1488,7 @@ class CryptVaultApp {
         
         if (conflicts.length > 0) {
             if (cleanFiles.length > 0) {
-                this.processUploadBatch(cleanFiles, false);
+                this.processUploadBatch(cleanFiles, false, targetFolderId);
                 finalFilesToUpload = [];
             }
             
@@ -1503,11 +1528,11 @@ class CryptVaultApp {
         }
         
         if (finalFilesToUpload.length > 0) {
-            await this.processUploadBatch(finalFilesToUpload, true);
+            await this.processUploadBatch(finalFilesToUpload, true, targetFolderId);
         }
     }
     
-    async processUploadBatch(files, showSummaryAtEnd = true) {
+    async processUploadBatch(files, showSummaryAtEnd = true, targetFolderId = this.currentFolderId) {
         if (files.length === 0) return;
         
         this.uploadOverlay.classList.remove('hidden');
@@ -1547,7 +1572,7 @@ class CryptVaultApp {
                 const relativePath = file.webkitRelativePath || file._customRelativePath || '';
                 
                 try {
-                    await this.uploadSingleFile(file, relativePath);
+                    await this.uploadSingleFile(file, relativePath, targetFolderId);
                     successfulFiles.push({ name: file._customName || file.name });
                 } catch (err) {
                     failedFiles.push({ name: file._customName || file.name, error: err.message });
@@ -1699,12 +1724,12 @@ class CryptVaultApp {
         });
     }
 
-    uploadSingleFile(file, relativePath) {
+    uploadSingleFile(file, relativePath, targetFolderId = this.currentFolderId) {
         return new Promise((resolve, reject) => {
             if (!this.token) return reject(new Error('Unauthenticated'));
             
             const formData = new FormData();
-            formData.append('parentId', this.currentFolderId);
+            formData.append('parentId', targetFolderId);
             formData.append('relativePath', relativePath);
             formData.append('file', file);
             if (file._customName) {
@@ -1740,6 +1765,13 @@ class CryptVaultApp {
 
     async handleDrop(e) {
         this.dropzone.classList.add('hidden');
+        document.querySelectorAll('.file-item.drag-hover').forEach(el => el.classList.remove('drag-hover'));
+        
+        let targetFolderId = this.currentFolderId;
+        const targetEl = e.target.closest('.file-item');
+        if (targetEl && targetEl.dataset.type === 'folder') {
+            targetFolderId = targetEl.dataset.id;
+        }
         
         const items = e.dataTransfer.items;
         if (!items) return;
@@ -1802,7 +1834,7 @@ class CryptVaultApp {
                     await this.authFetch('/api/folders/path', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ baseParentId: this.currentFolderId, relativePath: dirPath })
+                        body: JSON.stringify({ baseParentId: targetFolderId, relativePath: dirPath })
                     });
                 } catch(e) {}
             }
@@ -1812,7 +1844,7 @@ class CryptVaultApp {
         }
         
         if (filesToUpload.length > 0) {
-            await this.handleUploads(filesToUpload);
+            await this.handleUploads(filesToUpload, targetFolderId);
         } else {
             this.uploadOverlay.classList.add('hidden');
         }
