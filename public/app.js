@@ -780,7 +780,7 @@ class CryptVaultApp {
 
     async openAuditModal() {
         try {
-            const res = await this.apiCall('/api/settings/audit');
+            const res = await this.authFetch('/api/settings/audit');
             const data = await res.json();
             const tbody = document.getElementById('audit-log-body');
             tbody.innerHTML = '';
