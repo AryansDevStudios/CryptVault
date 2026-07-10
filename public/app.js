@@ -1127,14 +1127,36 @@ class CryptVaultApp {
             if (!res.ok) throw new Error('Failed to get ticket');
             const data = await res.json();
             
-            const url = `/api/download/${uuid}?ticket=${data.ticket}`;
+            const url = `/api/preview/${uuid}?ticket=${data.ticket}`;
             const ext = node.name.split('.').pop().toLowerCase();
+            
+            // Fetch Blob for everything to strictly prevent disk caching
+            const fileRes = await fetch(url);
+            if (this.currentPreviewId !== uuid) return;
+            if (!fileRes.ok) throw new Error('Download failed');
+            
+            const rawBlob = await fileRes.blob();
+            if (this.currentPreviewId !== uuid) return;
+            
+            // Revoke previous blob URL if any
+            if (this._currentBlobUrl) {
+                URL.revokeObjectURL(this._currentBlobUrl);
+            }
             
             // Image
             if (['jpg','jpeg','png','gif','webp','svg'].includes(ext)) {
+                let mimeType = 'image/jpeg';
+                if (ext === 'png') mimeType = 'image/png';
+                else if (ext === 'gif') mimeType = 'image/gif';
+                else if (ext === 'webp') mimeType = 'image/webp';
+                else if (ext === 'svg') mimeType = 'image/svg+xml';
+                
+                const typedBlob = new Blob([rawBlob], { type: mimeType });
+                this._currentBlobUrl = URL.createObjectURL(typedBlob);
+                
                 content.textContent = '';
                 const img = document.createElement('img');
-                img.src = url;
+                img.src = this._currentBlobUrl;
                 img.alt = 'Preview';
                 content.appendChild(img);
                 content.classList.remove('empty');
@@ -1143,9 +1165,16 @@ class CryptVaultApp {
             
             // Video
             if (['mp4','webm','ogg'].includes(ext)) {
+                let mimeType = 'video/mp4';
+                if (ext === 'webm') mimeType = 'video/webm';
+                else if (ext === 'ogg') mimeType = 'video/ogg';
+                
+                const typedBlob = new Blob([rawBlob], { type: mimeType });
+                this._currentBlobUrl = URL.createObjectURL(typedBlob);
+                
                 content.textContent = '';
                 const video = document.createElement('video');
-                video.src = url;
+                video.src = this._currentBlobUrl;
                 video.controls = true;
                 video.autoplay = true;
                 video.loop = true;
@@ -1154,17 +1183,7 @@ class CryptVaultApp {
                 return;
             }
 
-            // Fetch Blob for PDF, MD, Text, Binary check
-            const fileRes = await fetch(url);
-            if (this.currentPreviewId !== uuid) return;
-            if (!fileRes.ok) throw new Error('Download failed');
-            
-            const blob = await fileRes.blob();
-            if (this.currentPreviewId !== uuid) return;
-            // Revoke previous blob URL if any
-            if (this._currentBlobUrl) {
-                URL.revokeObjectURL(this._currentBlobUrl);
-            }
+            const blob = rawBlob;
             const blobUrl = URL.createObjectURL(blob);
             this._currentBlobUrl = blobUrl;
             
