@@ -1185,10 +1185,46 @@ class CryptVaultApp {
                 this._currentBlobUrl = URL.createObjectURL(typedBlob);
                 
                 content.textContent = '';
-                const img = document.createElement('img');
+                
+                // Create a container with relative positioning
+                const container = document.createElement('div');
+                container.style.position = 'relative';
+                container.style.display = 'inline-block';
+                container.style.maxWidth = '100%';
+                
+                // Overlay to prevent right-click / drag
+                const overlay = document.createElement('div');
+                overlay.style.position = 'absolute';
+                overlay.style.top = '0';
+                overlay.style.left = '0';
+                overlay.style.width = '100%';
+                overlay.style.height = '100%';
+                overlay.style.zIndex = '10';
+                overlay.oncontextmenu = (e) => { e.preventDefault(); return false; };
+                
+                // Create canvas for rendering
+                const canvas = document.createElement('canvas');
+                canvas.style.maxWidth = '100%';
+                canvas.style.display = 'block';
+                canvas.style.margin = '0 auto';
+                canvas.oncontextmenu = (e) => { e.preventDefault(); return false; };
+                
+                const img = new Image();
+                img.onload = () => {
+                    if (this.currentPreviewId !== uuid) return;
+                    canvas.width = img.naturalWidth;
+                    canvas.height = img.naturalHeight;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(img, 0, 0);
+                    // Revoke the blob URL immediately after drawing to completely destroy memory reference
+                    URL.revokeObjectURL(this._currentBlobUrl);
+                    this._currentBlobUrl = null;
+                };
                 img.src = this._currentBlobUrl;
-                img.alt = 'Preview';
-                content.appendChild(img);
+                
+                container.appendChild(canvas);
+                container.appendChild(overlay);
+                content.appendChild(container);
                 content.classList.remove('empty');
                 return;
             }
@@ -1208,6 +1244,12 @@ class CryptVaultApp {
                 video.controls = true;
                 video.autoplay = true;
                 video.loop = true;
+                
+                // Disable right-click and native download controls
+                video.oncontextmenu = (e) => { e.preventDefault(); return false; };
+                video.setAttribute('controlsList', 'nodownload noremoteplayback');
+                video.disablePictureInPicture = true;
+                
                 content.appendChild(video);
                 content.classList.remove('empty');
                 return;
