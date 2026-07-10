@@ -207,6 +207,9 @@ class ManifestManager {
         let changed = false;
         
         for (const folderName of folders) {
+            const validationError = validateNodeName(folderName);
+            if (validationError) throw new Error(`Invalid folder name in path: ${validationError}`);
+            
             const parentNode = this.cache.nodes[currentParentId];
             let foundFolderId = null;
             
