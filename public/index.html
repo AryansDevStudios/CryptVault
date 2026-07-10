@@ -380,6 +380,11 @@
                         </form>
                     </div>
                     
+                    <div class="settings-section mb-4">
+                        <h4 class="mb-2">Audit History</h4>
+                        <p class="text-sm text-muted mb-2">View cryptographically hash-chained audit logs.</p>
+                        <button type="button" class="btn btn-secondary" id="btn-view-audit">View Audit Logs</button>
+                    </div>
                     
                     <div class="settings-section">
                         <h4 class="text-primary mb-2">Change Master Password</h4>
@@ -487,6 +492,31 @@
     <div id="toast" class="toast hidden">
         <i id="toast-icon" class="ph-fill ph-check-circle"></i>
         <span id="toast-message"></span>
+    </div>
+
+    <!-- Audit Modal -->
+    <div id="audit-modal" class="overlay hidden modal-overlay">
+        <div class="custom-modal glass" style="max-width: 800px; width: 90%;">
+            <div class="flex justify-between items-center mb-4 pb-2" style="border-bottom: 1px solid var(--border-color);">
+                <h3>Audit Log History</h3>
+                <button class="btn-icon" id="btn-close-audit" title="Close"><i class="ph ph-x"></i></button>
+            </div>
+            <div class="table-container" style="max-height: 60vh; overflow-y: auto;">
+                <table style="width: 100%; text-align: left; font-size: 0.9em; border-collapse: collapse;">
+                    <thead>
+                        <tr style="border-bottom: 1px solid var(--border-color);">
+                            <th style="padding: 8px;">Timestamp</th>
+                            <th style="padding: 8px;">Action</th>
+                            <th style="padding: 8px;">IP</th>
+                            <th style="padding: 8px;">Hash (Short)</th>
+                        </tr>
+                    </thead>
+                    <tbody id="audit-log-body">
+                        <!-- Loaded dynamically -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
     </div>
 
     <!-- Application Logic -->

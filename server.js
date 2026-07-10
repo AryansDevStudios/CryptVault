@@ -552,6 +552,23 @@ app.post('/api/settings/reset', authMiddleware, async (req, res) => {
     }
 });
 
+app.get('/api/settings/audit', authMiddleware, async (req, res) => {
+    try {
+        const fsPromises = require('fs').promises;
+        const logPath = path.join(__dirname, 'logs', 'audit.log');
+        if (!fs.existsSync(logPath)) return res.json({ logs: [] });
+        
+        const data = await fsPromises.readFile(logPath, 'utf8');
+        const logs = data.trim().split('\n').filter(Boolean).map(line => {
+            try { return JSON.parse(line); } catch (e) { return null; }
+        }).filter(Boolean);
+        res.json({ logs });
+    } catch (err) {
+        console.error("Failed to read audit logs:", err);
+        res.status(500).json({ error: 'Failed to read audit logs' });
+    }
+});
+
 const tlsUpload = multer({ storage: multer.memoryStorage() }).fields([
     { name: 'tlsCertFile', maxCount: 1 },
     { name: 'tlsKeyFile', maxCount: 1 }

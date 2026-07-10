@@ -149,6 +149,10 @@ class CryptVaultApp {
         document.getElementById('btn-upload-file').addEventListener('click', () => this.fileUploadInput.click());
         document.getElementById('btn-upload-folder').addEventListener('click', () => this.folderUploadInput.click());
         document.getElementById('btn-settings').addEventListener('click', () => this.openSettingsModal());
+        document.getElementById('btn-view-audit').addEventListener('click', () => this.openAuditModal());
+        document.getElementById('btn-close-audit').addEventListener('click', () => {
+            document.getElementById('audit-modal').classList.add('hidden');
+        });
         
         // Close modals on generic close buttons
         document.querySelectorAll('.modal-close').forEach(btn => {
@@ -772,6 +776,62 @@ class CryptVaultApp {
         }
         
         this.settingsModal.classList.remove('hidden');
+    }
+
+    async openAuditModal() {
+        try {
+            const res = await this.apiCall('/api/settings/audit');
+            const data = await res.json();
+            const tbody = document.getElementById('audit-log-body');
+            tbody.innerHTML = '';
+            
+            if (data.logs && data.logs.length > 0) {
+                // Reverse to show newest first
+                data.logs.reverse().forEach(log => {
+                    const tr = document.createElement('tr');
+                    tr.style.borderBottom = '1px solid var(--border-color)';
+                    
+                    const tdTime = document.createElement('td');
+                    tdTime.style.padding = '8px';
+                    tdTime.textContent = new Date(log.timestamp).toLocaleString();
+                    
+                    const tdAction = document.createElement('td');
+                    tdAction.style.padding = '8px';
+                    tdAction.textContent = log.action;
+                    
+                    const tdIp = document.createElement('td');
+                    tdIp.style.padding = '8px';
+                    tdIp.textContent = log.ip || 'unknown';
+                    
+                    const tdHash = document.createElement('td');
+                    tdHash.style.padding = '8px';
+                    tdHash.style.fontFamily = 'monospace';
+                    tdHash.style.fontSize = '0.85em';
+                    tdHash.textContent = log.hash ? log.hash.substring(0, 12) + '...' : 'N/A';
+                    tdHash.title = `Hash: ${log.hash || 'N/A'}\nPrev: ${log.prevHash || 'N/A'}`;
+                    
+                    tr.appendChild(tdTime);
+                    tr.appendChild(tdAction);
+                    tr.appendChild(tdIp);
+                    tr.appendChild(tdHash);
+                    tbody.appendChild(tr);
+                });
+            } else {
+                const tr = document.createElement('tr');
+                const td = document.createElement('td');
+                td.colSpan = 4;
+                td.style.padding = '8px';
+                td.style.textAlign = 'center';
+                td.style.fontStyle = 'italic';
+                td.textContent = 'No audit logs found.';
+                tr.appendChild(td);
+                tbody.appendChild(tr);
+            }
+            
+            document.getElementById('audit-modal').classList.remove('hidden');
+        } catch (e) {
+            this.showToast('Failed to load audit logs', 'error');
+        }
     }
 
     async handleChangePassword() {
