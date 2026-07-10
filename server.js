@@ -498,6 +498,7 @@ app.post('/api/login', globalLoginLimiter, ipLoginLimiter, async (req, res) => {
 });
 
 app.post('/api/logout', authMiddleware, (req, res) => {
+    logAudit('LOGOUT', req.ip);
     sessions.delete(req.sessionToken);
     manifestManager.cache = null; // Clear cache on logout for security (single user assumption)
     res.json({ success: true });
@@ -531,6 +532,8 @@ app.post('/api/settings', authMiddleware, async (req, res) => {
         
         await manifestManager.save(req.encryptionKey);
         
+        logAudit('UPDATE_GENERAL_SETTINGS', req.ip, { maxUploadSize, parallelUploads, networkTimeout });
+        
         res.json({ success: true, settings: manifest.settings });
     } catch (err) {
         res.status(500).json({ error: 'Failed to save settings' });
@@ -546,6 +549,7 @@ app.post('/api/settings/reset', authMiddleware, async (req, res) => {
             networkTimeout: 0
         };
         await manifestManager.save(req.encryptionKey);
+        logAudit('RESET_GENERAL_SETTINGS', req.ip);
         res.json({ success: true, settings: manifest.settings });
     } catch (err) {
         res.status(500).json({ error: 'Failed to reset settings' });
@@ -640,6 +644,8 @@ app.post('/api/settings/network', authMiddleware, tlsUpload, (req, res) => {
             }
         });
         
+        logAudit('UPDATE_NETWORK_SETTINGS', req.ip, { port: port || 3000, host: host || '127.0.0.1', tlsEnabled: !!tlsEnabled, trustProxy });
+        
         res.json({ success: true, network: globalConfig.network });
     } catch (e) {
         console.error(e);
@@ -704,6 +710,8 @@ app.post('/api/settings/password', authMiddleware, async (req, res) => {
                 dekAuthTag: authTag.toString('hex')
             }
         });
+        
+        logAudit('PASSWORD_CHANGED', req.ip);
         
         // Revoke all OTHER sessions to force re-login on other devices
         for (const [token, session] of sessions.entries()) {
@@ -815,6 +823,7 @@ app.post('/api/folders', async (req, res) => {
         manifest.nodes[parentId].children.push(folderId);
         
         await manifestManager.save(req.encryptionKey);
+        logAudit('CREATE_FOLDER', req.ip, { uuid: folderId, folderName: name, parentId });
         res.json({ success: true, folderId, folder: manifest.nodes[folderId] });
     } catch (err) {
         res.status(500).json({ error: 'Failed to create folder' });
@@ -825,6 +834,7 @@ app.post('/api/folders/path', async (req, res) => {
     try {
         const { baseParentId, relativePath } = req.body;
         const actualParentId = await manifestManager.ensurePath(req.encryptionKey, baseParentId, relativePath);
+        logAudit('CREATE_FOLDER_PATH', req.ip, { baseParentId, relativePath, resultingFolderId: actualParentId });
         res.json({ success: true, folderId: actualParentId });
     } catch (err) {
         res.status(500).json({ error: 'Failed to create path' });
@@ -1108,6 +1118,8 @@ app.delete('/api/nodes/:uuid', async (req, res) => {
         
         gatherDeletions(uuid);
         await manifestManager.save(req.encryptionKey);
+        
+        logAudit('DELETE_NODE', req.ip, { uuid, deletedCount: filesToDelete.length });
         
         // Asynchronously delete files from disk
         for (const filePath of filesToDelete) {
