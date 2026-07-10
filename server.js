@@ -321,6 +321,7 @@ const authMiddleware = (req, res, next) => {
 
 function checkPasswordStrength(password) {
     if (password.length < 12) return 'Password must be at least 12 characters long.';
+    if (password.length > 256) return 'Password too long (max 256 characters).';
     if (!/[A-Z]/.test(password)) return 'Password must contain at least one uppercase letter.';
     if (!/[a-z]/.test(password)) return 'Password must contain at least one lowercase letter.';
     if (!/[0-9]/.test(password)) return 'Password must contain at least one number.';
