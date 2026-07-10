@@ -36,3 +36,4 @@ If you discover a security vulnerability in CryptVault, please report it respons
 4. **Keep dependencies updated** — Run `npm audit` and `npm update` regularly
 5. **Back up securely** — Encrypt your backups of `uploads/` and `config.json`
 6. **Monitor audit logs** — Review `logs/audit.log` for suspicious activity
+7. **Configure trustProxy carefully** — If deploying behind a reverse proxy, configure `trustProxy` as a specific IP/CIDR (e.g. `"loopback"` or `"10.0.0.0/8"`) rather than a simple boolean `true` to prevent IP spoofing that could bypass rate limits and forge audit logs.

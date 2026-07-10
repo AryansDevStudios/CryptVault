@@ -38,7 +38,8 @@ function loadConfig() {
     
     // Apply network config immediately
     if (globalConfig.network && globalConfig.network.trustProxy) {
-        app.set('trust proxy', 1);
+        const tp = globalConfig.network.trustProxy;
+        app.set('trust proxy', tp === true ? 1 : tp);
     }
 }
 loadConfig();
@@ -560,7 +561,10 @@ app.post('/api/settings/network', authMiddleware, tlsUpload, (req, res) => {
     try {
         const port = parseInt(req.body.port, 10);
         const host = req.body.host;
-        const trustProxy = req.body.trustProxy === 'true' || req.body.trustProxy === true;
+        let trustProxy = req.body.trustProxy;
+        if (trustProxy === 'true' || trustProxy === true) trustProxy = true;
+        else if (trustProxy === 'false' || trustProxy === false) trustProxy = false;
+        
         const tlsEnabled = req.body.tlsEnabled === 'true' || req.body.tlsEnabled === true;
         
         let tlsKeyPath = globalConfig.network.tls ? globalConfig.network.tls.keyPath : '';
@@ -610,7 +614,7 @@ app.post('/api/settings/network', authMiddleware, tlsUpload, (req, res) => {
             network: {
                 port: port || 3000,
                 host: host || '127.0.0.1',
-                trustProxy: !!trustProxy,
+                trustProxy: trustProxy,
                 tls: {
                     enabled: !!tlsEnabled,
                     keyPath: tlsKeyPath,
