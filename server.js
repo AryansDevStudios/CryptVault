@@ -365,7 +365,7 @@ app.post('/api/setup', async (req, res) => {
         if (strengthError) return res.status(400).json({ error: strengthError });
         
         const preHashed = crypto.createHash('sha256').update(password).digest('hex');
-        const hash = await bcrypt.hash(preHashed, 12);
+        const hash = await bcrypt.hash(preHashed, 14);
         const currentDEK = crypto.randomBytes(32);
         
         const salt = crypto.randomBytes(32).toString('hex');
@@ -653,7 +653,7 @@ app.post('/api/settings/password', authMiddleware, async (req, res) => {
         const currentDEK = Buffer.from(req.encryptionKey, 'hex');
         
         const newPreHashed = crypto.createHash('sha256').update(newPassword).digest('hex');
-        const hash = await bcrypt.hash(newPreHashed, 12);
+        const hash = await bcrypt.hash(newPreHashed, 14);
         
         const salt = crypto.randomBytes(32).toString('hex');
         const scryptN = 131072;
@@ -1107,7 +1107,7 @@ setInterval(() => {
     for (const [ticket, data] of downloadTickets.entries()) {
         if (data.expiresAt < now) downloadTickets.delete(ticket);
     }
-}, 60 * 60 * 1000);
+}, 60 * 60 * 1000).unref();
 
 let activeServer = null;
 
@@ -1149,6 +1149,8 @@ function restartServer() {
     });
 }
 
-startServer();
+if (require.main === module) {
+    startServer();
+}
 
 module.exports = app;

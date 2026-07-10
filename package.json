@@ -8,10 +8,18 @@
   },
   "scripts": {
     "start": "node server.js",
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "jest",
     "postinstall": "node setup-libs.js"
   },
-  "keywords": ["encryption", "file-storage", "secure", "zero-trust", "nodejs", "aes-256-gcm", "self-hosted"],
+  "keywords": [
+    "encryption",
+    "file-storage",
+    "secure",
+    "zero-trust",
+    "nodejs",
+    "aes-256-gcm",
+    "self-hosted"
+  ],
   "repository": {
     "type": "git",
     "url": "https://github.com/AryansDevStudios/CryptVault.git"
@@ -30,5 +38,9 @@
     "marked": "12.0.0",
     "multer": "^2.2.0",
     "pdfjs-dist": "3.11.174"
+  },
+  "devDependencies": {
+    "jest": "^30.4.2",
+    "supertest": "^7.2.2"
   }
 }
