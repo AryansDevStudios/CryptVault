@@ -439,6 +439,10 @@ app.post('/api/login', globalLoginLimiter, ipLoginLimiter, async (req, res) => {
             return res.status(400).json({ error: 'Password is required' });
         }
         
+        if (!globalConfig.security || !globalConfig.security.masterPasswordHash) {
+            return res.status(400).json({ error: 'Vault not set up yet' });
+        }
+        
         // Use async bcrypt
         const preHashed = crypto.createHash('sha256').update(password).digest('hex');
         const isValid = await bcrypt.compare(preHashed, globalConfig.security.masterPasswordHash);
@@ -640,6 +644,10 @@ app.post('/api/system/restart', authMiddleware, (req, res) => {
 app.post('/api/settings/password', authMiddleware, async (req, res) => {
     try {
         const { currentPassword, newPassword } = req.body;
+        
+        if (!currentPassword || typeof currentPassword !== 'string' || !newPassword || typeof newPassword !== 'string') {
+            return res.status(400).json({ error: 'currentPassword and newPassword are required strings' });
+        }
         
         const currentPreHashed = crypto.createHash('sha256').update(currentPassword).digest('hex');
         const isValid = await bcrypt.compare(currentPreHashed, globalConfig.security.masterPasswordHash);
