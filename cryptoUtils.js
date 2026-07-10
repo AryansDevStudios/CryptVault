@@ -189,9 +189,39 @@ const decryptMetadata = (encryptedString, keyString) => {
     return decrypted;
 };
 
+/**
+ * Encrypts a Buffer (like DEK).
+ * @param {Buffer} buffer 
+ * @param {Buffer} key 
+ * @returns {{ encrypted: Buffer, iv: Buffer, authTag: Buffer }}
+ */
+const encryptBuffer = (buffer, key) => {
+    const iv = crypto.randomBytes(IV_LENGTH);
+    const cipher = crypto.createCipheriv(ALGORITHM, key, iv);
+    const encrypted = Buffer.concat([cipher.update(buffer), cipher.final()]);
+    const authTag = cipher.getAuthTag();
+    return { encrypted, iv, authTag };
+};
+
+/**
+ * Decrypts a Buffer.
+ * @param {Buffer} encryptedBuffer 
+ * @param {Buffer} key 
+ * @param {Buffer} iv 
+ * @param {Buffer} authTag 
+ * @returns {Buffer}
+ */
+const decryptBuffer = (encryptedBuffer, key, iv, authTag) => {
+    const decipher = crypto.createDecipheriv(ALGORITHM, key, iv);
+    decipher.setAuthTag(authTag);
+    return Buffer.concat([decipher.update(encryptedBuffer), decipher.final()]);
+};
+
 module.exports = {
     encryptStream,
     decryptStream,
     encryptMetadata,
-    decryptMetadata
+    decryptMetadata,
+    encryptBuffer,
+    decryptBuffer
 };

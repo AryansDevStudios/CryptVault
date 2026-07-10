@@ -8,7 +8,7 @@ const multer = require('multer');
 const archiver = require('archiver');
 const bcrypt = require('bcryptjs');
 const { PassThrough } = require('stream');
-const { encryptStream, decryptStream, encryptMetadata, decryptMetadata } = require('./cryptoUtils');
+const { encryptStream, decryptStream, encryptMetadata, decryptMetadata, encryptBuffer, decryptBuffer } = require('./cryptoUtils');
 const { logAudit } = require('./logger');
 
 const app = express();
@@ -373,10 +373,7 @@ app.post('/api/setup', async (req, res) => {
         const scryptN = 131072;
         const newKEK = crypto.scryptSync(password, salt, 32, { N: scryptN, r: 8, p: 1, maxmem: 256 * 1024 * 1024 });
         
-        const iv = crypto.randomBytes(16);
-        const cipher = crypto.createCipheriv('aes-256-gcm', newKEK, iv);
-        const encryptedDEK = Buffer.concat([cipher.update(currentDEK), cipher.final()]);
-        const authTag = cipher.getAuthTag();
+        const { encrypted: encryptedDEK, iv, authTag } = encryptBuffer(currentDEK, newKEK);
         
         saveConfig({
             security: {
@@ -455,9 +452,12 @@ app.post('/api/login', globalLoginLimiter, ipLoginLimiter, async (req, res) => {
             let finalDEKHex;
             if (globalConfig.security.encryptedDek && globalConfig.security.dekIv) {
                 try {
-                    const decipher = crypto.createDecipheriv('aes-256-gcm', kek, Buffer.from(globalConfig.security.dekIv, 'hex'));
-                    if (globalConfig.security.dekAuthTag) decipher.setAuthTag(Buffer.from(globalConfig.security.dekAuthTag, 'hex'));
-                    const dek = Buffer.concat([decipher.update(Buffer.from(globalConfig.security.encryptedDek, 'hex')), decipher.final()]);
+                    const dek = decryptBuffer(
+                        Buffer.from(globalConfig.security.encryptedDek, 'hex'),
+                        kek,
+                        Buffer.from(globalConfig.security.dekIv, 'hex'),
+                        globalConfig.security.dekAuthTag ? Buffer.from(globalConfig.security.dekAuthTag, 'hex') : Buffer.alloc(16)
+                    );
                     finalDEKHex = dek.toString('hex');
                 } catch (e) {
                     console.error("DEK Decryption Error:", e);
@@ -668,10 +668,7 @@ app.post('/api/settings/password', authMiddleware, async (req, res) => {
         const scryptN = 131072;
         const newKEK = crypto.scryptSync(newPassword, salt, 32, { N: scryptN, r: 8, p: 1, maxmem: 256 * 1024 * 1024 });
         
-        const iv = crypto.randomBytes(16);
-        const cipher = crypto.createCipheriv('aes-256-gcm', newKEK, iv);
-        const encryptedDEK = Buffer.concat([cipher.update(currentDEK), cipher.final()]);
-        const authTag = cipher.getAuthTag();
+        const { encrypted: encryptedDEK, iv, authTag } = encryptBuffer(currentDEK, newKEK);
         
         saveConfig({
             security: {
