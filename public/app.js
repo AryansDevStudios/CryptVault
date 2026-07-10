@@ -1,7 +1,4 @@
-// Configure PDF.js worker
-if (typeof pdfjsLib !== 'undefined') {
-    pdfjsLib.GlobalWorkerOptions.workerSrc = 'lib/pdf.worker.min.js';
-}
+
 
 class CryptVaultApp {
     constructor() {

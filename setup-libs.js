@@ -10,8 +10,8 @@ if (!fs.existsSync(libDir)) {
 
 // Map of library files to copy from node_modules into public/lib/
 const filesToCopy = [
-    { src: ['node_modules', 'pdfjs-dist', 'build', 'pdf.min.js'], dest: 'pdf.min.js' },
-    { src: ['node_modules', 'pdfjs-dist', 'build', 'pdf.worker.min.js'], dest: 'pdf.worker.min.js' },
+    { src: ['node_modules', 'pdfjs-dist', 'build', 'pdf.min.mjs'], dest: 'pdf.min.mjs' },
+    { src: ['node_modules', 'pdfjs-dist', 'build', 'pdf.worker.min.mjs'], dest: 'pdf.worker.min.mjs' },
     { src: ['node_modules', 'marked', 'marked.min.js'], dest: 'marked.min.js' },
     { src: ['node_modules', 'dompurify', 'dist', 'purify.min.js'], dest: 'purify.min.js' }
 ];

@@ -37,7 +37,7 @@
     "helmet": "^8.2.0",
     "marked": "12.0.0",
     "multer": "^2.2.0",
-    "pdfjs-dist": "3.11.174"
+    "pdfjs-dist": "^4.2.67"
   },
   "devDependencies": {
     "jest": "^30.4.2",
