@@ -1290,7 +1290,7 @@ class CryptVaultApp {
                 content.classList.remove('empty');
                 
                 try {
-                    const pdf = await pdfjsLib.getDocument(blobUrl).promise;
+                    const pdf = await pdfjsLib.getDocument({ url: blobUrl, isEvalSupported: false }).promise;
                     if (this.currentPreviewId !== uuid) return;
                     
                     for (let i = 1; i <= pdf.numPages; i++) {
