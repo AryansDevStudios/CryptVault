@@ -1274,8 +1274,7 @@ class CryptVaultApp {
             const res = await this.authFetch('/api/download-ticket', { method: 'POST' });
             const data = await res.json();
             if (data.ticket) {
-                document.cookie = `download_ticket=${data.ticket}; path=/api/download-folder/${uuid}; max-age=60; samesite=strict; secure`;
-                window.location.href = `/api/download-folder/${uuid}`;
+                window.location.href = `/api/download-folder/${uuid}?ticket=${data.ticket}`;
                 this.showToast('Zipping and downloading folder...', 'success');
             } else {
                 this.showToast('Failed to get download ticket', 'error');
@@ -1313,8 +1312,7 @@ class CryptVaultApp {
             });
             const data = await res.json();
             if (data.ticket) {
-                document.cookie = `download_ticket=${data.ticket}; path=/api/download-multiple; max-age=60; samesite=strict; secure`;
-                window.location.href = `/api/download-multiple`;
+                window.location.href = `/api/download-multiple?ticket=${data.ticket}`;
                 this.showToast(`Zipping and downloading ${this.selectedNodes.size} items...`, 'success');
                 this.clearSelection();
                 this.loadNodes(this.currentFolderId);
