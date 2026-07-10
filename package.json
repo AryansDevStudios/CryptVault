@@ -25,7 +25,7 @@
     "url": "https://github.com/AryansDevStudios/CryptVault.git"
   },
   "author": "Aryan Gupta",
-  "license": "ISC",
+  "license": "AGPL-3.0",
   "type": "commonjs",
   "dependencies": {
     "@phosphor-icons/web": "^2.1.2",
