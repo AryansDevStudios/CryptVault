@@ -929,7 +929,7 @@ app.get('/api/download/:uuid', ticketAuth, async (req, res) => {
         res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(node.name)}`);
         res.setHeader('Content-Type', 'application/octet-stream');
 
-        logAudit('DOWNLOAD_FILE', req.ip, { uuid });
+        logAudit('DOWNLOAD_FILE', req.ip, { uuid, filename: node.name, size: node.size });
         
         await decryptStream(filePath, res, req.encryptionKey);
     } catch (err) {
@@ -949,6 +949,8 @@ app.get('/api/download-folder/:uuid', ticketAuth, async (req, res) => {
         
         res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(folderNode.name + '.zip')}`);
         res.setHeader('Content-Type', 'application/zip');
+        
+        logAudit('DOWNLOAD_FOLDER', req.ip, { uuid, folderName: folderNode.name });
         
         const archive = new archiver.ZipArchive({ zlib: { level: 1 } });
         
@@ -1005,6 +1007,9 @@ app.get('/api/download-multiple', ticketAuth, async (req, res) => {
         
         res.setHeader('Content-Disposition', `attachment; filename="bulk_download.zip"`);
         res.setHeader('Content-Type', 'application/zip');
+        
+        const itemNames = uuids.map(id => manifest.nodes[id] ? manifest.nodes[id].name : 'unknown');
+        logAudit('DOWNLOAD_MULTIPLE', req.ip, { count: uuids.length, items: itemNames });
         
         const archive = new archiver.ZipArchive({ zlib: { level: 1 } });
         
