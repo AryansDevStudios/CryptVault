@@ -418,11 +418,10 @@ app.post('/api/setup', async (req, res) => {
     }
 });
 
-const globalLoginLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 20, // 20 failed attempts total across all IPs
-    keyGenerator: () => 'global',
-    message: { error: 'Vault is under attack. Global lockout active for 15 minutes.' },
+const passwordChangeLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 5,
+    message: { error: 'Too many failed password change attempts, please try again after 15 minutes.' },
     skipSuccessfulRequests: true
 });
 
@@ -433,7 +432,7 @@ const ipLoginLimiter = rateLimit({
     skipSuccessfulRequests: true
 });
 
-app.post('/api/login', globalLoginLimiter, ipLoginLimiter, async (req, res) => {
+app.post('/api/login', ipLoginLimiter, async (req, res) => {
     try {
         const { password } = req.body;
         if (!password || typeof password !== 'string') {
@@ -671,7 +670,7 @@ app.post('/api/system/restart', authMiddleware, (req, res) => {
     }, 500);
 });
 
-app.post('/api/settings/password', authMiddleware, async (req, res) => {
+app.post('/api/settings/password', authMiddleware, passwordChangeLimiter, async (req, res) => {
     try {
         const { currentPassword, newPassword } = req.body;
         
