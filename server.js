@@ -39,8 +39,11 @@ function loadConfig() {
     }
     
     // Apply network config immediately
-    if (globalConfig.network && globalConfig.network.trustProxy) {
-        const tp = globalConfig.network.trustProxy;
+    const isRender = process.env.RENDER === 'true';
+    const envTrustProxy = process.env.TRUST_PROXY === 'true' || isRender;
+    
+    if (envTrustProxy || (globalConfig.network && globalConfig.network.trustProxy)) {
+        const tp = envTrustProxy ? 1 : globalConfig.network.trustProxy;
         app.set('trust proxy', tp === true ? 1 : tp);
     }
 }
@@ -392,9 +395,14 @@ app.post('/api/setup', async (req, res) => {
                 dekAuthTag: authTag.toString('hex')
             },
             network: {
-                host: deployEnv === 'local' ? '127.0.0.1' : '0.0.0.0'
+                host: deployEnv === 'local' ? '127.0.0.1' : '0.0.0.0',
+                trustProxy: deployEnv === 'server'
             }
         });
+        
+        if (deployEnv === 'server') {
+            app.set('trust proxy', 1);
+        }
         
         const token = crypto.randomBytes(32).toString('hex');
         sessions.set(token, {
