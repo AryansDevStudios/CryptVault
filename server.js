@@ -4,6 +4,8 @@ const path = require('path');
 const fs = require('fs');
 const fsPromises = fs.promises;
 const crypto = require('crypto');
+const util = require('util');
+const scryptAsync = util.promisify(crypto.scrypt);
 const multer = require('multer');
 const archiver = require('archiver');
 const bcrypt = require('bcryptjs');
@@ -375,8 +377,8 @@ app.post('/api/setup', async (req, res) => {
         const currentDEK = crypto.randomBytes(32);
         
         const salt = crypto.randomBytes(32).toString('hex');
-        const scryptN = 131072;
-        const newKEK = crypto.scryptSync(password, salt, 32, { N: scryptN, r: 8, p: 1, maxmem: 256 * 1024 * 1024 });
+        const scryptN = 65536;
+        const newKEK = await scryptAsync(password, salt, 32, { N: scryptN, r: 8, p: 1, maxmem: 256 * 1024 * 1024 });
         
         const { encrypted: encryptedDEK, iv, authTag } = encryptBuffer(currentDEK, newKEK);
         
@@ -450,8 +452,8 @@ app.post('/api/login', ipLoginLimiter, async (req, res) => {
         
         if (isValid) {
             // Derive KEK
-            const scryptN = parseInt(globalConfig.security.scryptN || 16384, 10);
-            const kek = crypto.scryptSync(password, globalConfig.security.keyDerivationSalt, 32, { N: scryptN, r: 8, p: 1, maxmem: 256 * 1024 * 1024 });
+            const scryptN = parseInt(globalConfig.security.scryptN || 65536, 10);
+            const kek = await scryptAsync(password, globalConfig.security.keyDerivationSalt, 32, { N: scryptN, r: 8, p: 1, maxmem: 256 * 1024 * 1024 });
             
             let finalDEKHex;
             if (globalConfig.security.encryptedDek && globalConfig.security.dekIv) {
@@ -695,8 +697,8 @@ app.post('/api/settings/password', authMiddleware, passwordChangeLimiter, async 
         const hash = await bcrypt.hash(newPreHashed, 14);
         
         const salt = crypto.randomBytes(32).toString('hex');
-        const scryptN = 131072;
-        const newKEK = crypto.scryptSync(newPassword, salt, 32, { N: scryptN, r: 8, p: 1, maxmem: 256 * 1024 * 1024 });
+        const scryptN = 65536;
+        const newKEK = await scryptAsync(newPassword, salt, 32, { N: scryptN, r: 8, p: 1, maxmem: 256 * 1024 * 1024 });
         
         const { encrypted: encryptedDEK, iv, authTag } = encryptBuffer(currentDEK, newKEK);
         
