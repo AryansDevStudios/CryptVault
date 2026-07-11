@@ -8,8 +8,7 @@
   },
   "scripts": {
     "start": "node server.js",
-    "test": "jest",
-    "postinstall": "node setup-libs.js"
+    "test": "jest"
   },
   "keywords": [
     "encryption",
@@ -31,20 +30,16 @@
     "@phosphor-icons/web": "^2.1.2",
     "archiver": "^8.0.0",
     "bcryptjs": "^3.0.3",
-    "dompurify": "^3.4.11",
     "express": "^5.2.1",
     "express-rate-limit": "^8.5.2",
     "helmet": "^8.2.0",
-    "marked": "12.0.0",
-    "multer": "^2.2.0",
-    "pdfjs-dist": "^4.2.67"
+    "multer": "^2.2.0"
   },
   "devDependencies": {
     "jest": "^30.4.2",
     "supertest": "^7.2.2"
   },
   "overrides": {
-    "tar": "^7.5.19",
-    "canvas": "latest"
+    "tar": "^7.5.19"
   }
 }
