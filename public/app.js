@@ -447,7 +447,15 @@ class CryptVaultApp {
             return;
         }
         
+        const btn = document.querySelector('#setup-form button[type="submit"]');
+        const hint = document.getElementById('setup-hint');
+        const originalHtml = btn.innerHTML;
+        
         try {
+            btn.disabled = true;
+            btn.innerHTML = `<i class="ph ph-spinner ph-spin"></i><span>Setting up Vault...</span>`;
+            if (hint) hint.classList.remove('hidden');
+            
             const res = await fetch('/api/setup', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -470,12 +478,24 @@ class CryptVaultApp {
         } catch (error) {
             this.setupError.textContent = 'Server connection error';
             this.setupError.classList.remove('hidden');
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = originalHtml;
+            if (hint) hint.classList.add('hidden');
         }
     }
 
     async handleLogin() {
         const password = this.passwordInput.value;
+        const btn = document.querySelector('#login-form button[type="submit"]');
+        const hint = document.getElementById('login-hint');
+        const originalHtml = btn.innerHTML;
+        
         try {
+            btn.disabled = true;
+            btn.innerHTML = `<i class="ph ph-spinner ph-spin"></i><span>Authenticating...</span>`;
+            if (hint) hint.classList.remove('hidden');
+            
             const res = await fetch('/api/login', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -497,6 +517,10 @@ class CryptVaultApp {
         } catch (error) {
             this.loginError.textContent = 'Server connection error';
             this.loginError.classList.remove('hidden');
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = originalHtml;
+            if (hint) hint.classList.add('hidden');
         }
     }
 
