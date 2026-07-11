@@ -957,54 +957,7 @@ app.get('/api/download/:uuid', ticketAuth, async (req, res) => {
     }
 });
 
-app.get('/api/preview/:uuid', ticketAuth, async (req, res) => {
-    activeTransfers++;
-    let done = false;
-    const dec = () => { if (!done) { activeTransfers--; done = true; } };
-    res.on('finish', dec);
-    res.on('close', dec);
-    
-    try {
-        const { uuid } = req.params;
-        const filePath = safeFilePath(uuid);
-        if (!filePath) return res.status(400).json({ error: 'Invalid file ID' });
-        
-        if (req.ticketData.uuids && req.ticketData.uuids.length > 0 && !req.ticketData.uuids.includes(uuid)) {
-            return res.status(403).json({ error: 'Ticket not valid for this file' });
-        }
-        
-        const manifest = await manifestManager.load(req.encryptionKey);
-        const node = manifest.nodes[uuid];
 
-        if (!node || node.type !== 'file') return res.status(404).json({ error: 'File not found' });
-        if (node.size > 50 * 1024 * 1024) return res.status(400).json({ error: 'File too large for preview' });
-        
-        try {
-            await fsPromises.access(filePath);
-        } catch (e) {
-            return res.status(404).json({ error: 'File missing on disk' });
-        }
-
-        const ext = node.name.split('.').pop().toLowerCase();
-        const mimeTypes = {
-            'jpg': 'image/jpeg', 'jpeg': 'image/jpeg', 'png': 'image/png',
-            'gif': 'image/gif', 'webp': 'image/webp', 'svg': 'image/svg+xml',
-            'mp4': 'video/mp4', 'webm': 'video/webm', 'ogg': 'video/ogg',
-            'pdf': 'application/pdf', 'md': 'text/markdown', 'txt': 'text/plain'
-        };
-        const mimeType = mimeTypes[ext] || 'application/octet-stream';
-
-        res.setHeader('Content-Type', mimeType);
-        res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0, private');
-        res.setHeader('Content-Security-Policy', "default-src 'none'; img-src 'self' data: blob:; style-src 'unsafe-inline';");
-        
-        logAudit('PREVIEW_FILE', req.ip, { uuid, filename: node.name, size: node.size });
-        
-        await decryptStream(filePath, res, req.encryptionKey);
-    } catch (err) {
-        if (!res.headersSent) res.status(500).json({ error: 'Decryption failed' });
-    }
-});
 
 app.get('/api/download-folder/:uuid', ticketAuth, async (req, res) => {
     try {

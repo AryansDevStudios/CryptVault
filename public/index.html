@@ -16,11 +16,6 @@
     <link rel="stylesheet" type="text/css" href="phosphor-icons/fill/style.css">
     <!-- Custom CSS -->
     <link rel="stylesheet" href="style.css">
-    <!-- Libraries -->
-    <script src="lib/marked.min.js"></script>
-    <script src="lib/purify.min.js"></script>
-    
-    <script type="module" src="pdf-setup.js"></script>
 </head>
 <body>
     <div class="background-effects">
@@ -232,18 +227,6 @@
                     </div>
                 </div>
                 </div>
-
-                <!-- Preview Pane -->
-                <aside id="preview-pane" class="preview-pane hidden">
-                    <div class="preview-header">
-                        <h3 id="preview-title" title="Preview">Preview</h3>
-                        <button class="btn btn-icon btn-sm" id="btn-close-preview"><i class="ph ph-x"></i></button>
-                    </div>
-                    <div id="preview-content" class="preview-content empty">
-                        <i class="ph ph-file text-4xl mb-2"></i>
-                        <p>Select a file to preview</p>
-                    </div>
-                </aside>
             </div>
         </section>
         
@@ -296,15 +279,6 @@
                     </div>
 
                     <!-- Experimental Settings -->
-                    <div class="settings-section mb-4">
-                        <h4 class="text-primary mb-2">Experimental</h4>
-                        <label class="flex items-center gap-2 cursor-pointer mb-2">
-                            <input type="checkbox" id="setting-enable-preview" class="w-auto">
-                            Enable File Previews
-                        </label>
-                        <p class="text-xs text-muted">Allow downloading and decrypting files into browser memory for previewing. Uses bandwidth and may have experimental bugs.</p>
-                    </div>
-
                     <div class="settings-section mb-4">
                         <h4 class="text-primary mb-2">General</h4>
                         <label for="setting-max-upload" class="block mb-1">Maximum Upload Size (MB)</label>
