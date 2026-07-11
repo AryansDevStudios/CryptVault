@@ -17,7 +17,6 @@ CryptVault is a self-hosted encrypted file storage system designed with security
 - **TLS Support** — Built-in HTTPS with certificate management
 - **Folder Organization** — Full hierarchical folder structure with drag-and-drop upload
 - **Bulk Operations** — Multi-select download (as ZIP), delete, and folder download
-- **File Preview** — In-browser preview for images, video, audio, PDF, Markdown, and text files
 - **Dark/Light Theme** — System-aware theme with manual override
 - **Audit Logging** — All security events logged for review
 
