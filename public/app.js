@@ -1269,11 +1269,6 @@ class CryptVaultApp {
                 video.autoplay = true;
                 video.loop = true;
                 
-                // Disable right-click and native download controls
-                video.oncontextmenu = (e) => { e.preventDefault(); return false; };
-                video.setAttribute('controlsList', 'nodownload noremoteplayback');
-                video.disablePictureInPicture = true;
-                
                 content.appendChild(video);
                 content.classList.remove('empty');
                 return;
