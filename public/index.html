@@ -20,11 +20,7 @@
     <script src="lib/marked.min.js"></script>
     <script src="lib/purify.min.js"></script>
     
-    <script type="module">
-        import * as pdfjsLib from './lib/pdf.min.mjs';
-        pdfjsLib.GlobalWorkerOptions.workerSrc = './lib/pdf.worker.min.mjs';
-        window.pdfjsLib = pdfjsLib;
-    </script>
+    <script type="module" src="pdf-setup.js"></script>
 </head>
 <body>
     <div class="background-effects">
