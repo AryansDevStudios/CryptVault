@@ -3,6 +3,23 @@ const request = require('supertest');
 // Mock archiver since it's an ESM module that Jest struggles with natively without extra config
 jest.mock('archiver', () => jest.fn());
 
+jest.mock('fs', () => {
+    const originalFs = jest.requireActual('fs');
+    return {
+        ...originalFs,
+        readFileSync: jest.fn((pathStr, options) => {
+            if (typeof pathStr === 'string' && pathStr.endsWith('config.json')) {
+                return JSON.stringify({
+                    security: {
+                        masterPasswordHash: "$2b$12$dummyHashdummyHashdummyH"
+                    }
+                });
+            }
+            return originalFs.readFileSync(pathStr, options);
+        })
+    };
+});
+
 const app = require('../server');
 
 describe('Auth and Access Control', () => {
