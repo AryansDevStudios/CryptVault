@@ -114,6 +114,11 @@ class CryptVaultApp {
         this.loginForm.addEventListener('submit', (e) => { e.preventDefault(); this.handleLogin(); });
         document.getElementById('logout-btn').addEventListener('click', () => this.handleLogout());
         
+        // Clear errors on input
+        this.passwordInput.addEventListener('input', () => this.loginError.classList.add('hidden'));
+        this.setupPasswordInput.addEventListener('input', () => this.setupError.classList.add('hidden'));
+        this.setupConfirmInput.addEventListener('input', () => this.setupError.classList.add('hidden'));
+        
         // Settings / UI Modals Buttons
         document.getElementById('change-password-form').addEventListener('submit', (e) => {
             e.preventDefault();
@@ -452,6 +457,7 @@ class CryptVaultApp {
         const originalHtml = btn.innerHTML;
         
         try {
+            this.setupError.classList.add('hidden');
             btn.disabled = true;
             btn.innerHTML = `<i class="ph ph-spinner ph-spin"></i><span>Setting up Vault...</span>`;
             if (hint) hint.classList.remove('hidden');
@@ -492,6 +498,7 @@ class CryptVaultApp {
         const originalHtml = btn.innerHTML;
         
         try {
+            this.loginError.classList.add('hidden');
             btn.disabled = true;
             btn.innerHTML = `<i class="ph ph-spinner ph-spin"></i><span>Authenticating...</span>`;
             if (hint) hint.classList.remove('hidden');
