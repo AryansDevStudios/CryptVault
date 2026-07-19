@@ -245,7 +245,10 @@ class CryptVaultApp {
             if (this.conflictApplyCallback) this.conflictApplyCallback();
         });
 
-
+        // Preview Pane
+        document.getElementById('btn-close-preview').addEventListener('click', () => {
+            this.closePreview();
+        });
 
         // Mobile Long-Press Selection
         let pressTimer;
@@ -302,12 +305,7 @@ class CryptVaultApp {
             if (type === 'folder') {
                 this.loadNodes(id);
             } else if (type === 'file') {
-                const fileItem = e.target.closest('.file-item');
-                const checkbox = fileItem ? fileItem.querySelector('.custom-checkbox input[type="checkbox"]') : null;
-                if (checkbox) {
-                    checkbox.checked = !checkbox.checked;
-                    this.toggleSelectNode(id, checkbox);
-                }
+                this.previewFile(id);
             }
         });
 
@@ -831,6 +829,10 @@ class CryptVaultApp {
         const timeoutInput = document.getElementById('setting-network-timeout');
         if (timeoutInput) timeoutInput.value = this.settings.networkTimeout || 0;
         
+        const previewCheckbox = document.getElementById('setting-enable-preview');
+        if (previewCheckbox) {
+            previewCheckbox.checked = localStorage.getItem('enablePreview') === 'true';
+        }
         
         this.settingsModal.classList.remove('hidden');
     }
@@ -876,6 +878,7 @@ class CryptVaultApp {
 
         const filteredLogs = this.auditLogs.filter(log => {
             const act = log.action;
+            if (act === 'PREVIEW_FILE') return activeFilters.includes('VIEW');
             if (act.startsWith('LOGIN') || act === 'LOGOUT') return activeFilters.includes('LOGIN');
             if (act === 'DOWNLOAD_FILE' || act === 'DOWNLOAD_FOLDER') return activeFilters.includes('DOWNLOAD');
             if (act === 'DELETE_NODE') return activeFilters.includes('DELETE');
@@ -1020,6 +1023,10 @@ class CryptVaultApp {
         const timeoutInput = document.getElementById('setting-network-timeout');
         const networkTimeout = timeoutInput ? parseInt(timeoutInput.value, 10) : 0;
         
+        const previewCheckbox = document.getElementById('setting-enable-preview');
+        if (previewCheckbox) {
+            localStorage.setItem('enablePreview', previewCheckbox.checked);
+        }
         
         try {
             const res = await this.authFetch('/api/settings', {
@@ -1135,7 +1142,258 @@ class CryptVaultApp {
         }
     }
 
+    closePreview() {
+        document.getElementById('preview-pane').classList.add('hidden');
+        document.getElementById('dashboard-view').classList.remove('preview-open');
+        this.currentPreviewId = null;
+        // Revoke any blob URLs to free memory
+        if (this._currentBlobUrl) {
+            URL.revokeObjectURL(this._currentBlobUrl);
+            this._currentBlobUrl = null;
+        }
+    }
 
+    async previewFile(uuid) {
+        if (localStorage.getItem('enablePreview') !== 'true') {
+            return;
+        }
+
+        const pane = document.getElementById('preview-pane');
+        const title = document.getElementById('preview-title');
+        const content = document.getElementById('preview-content');
+        
+        if (!pane.classList.contains('hidden') && this.currentPreviewId === uuid) {
+            this.closePreview();
+            return;
+        }
+
+        const node = this.currentFolderNodes[uuid];
+        if (!node) return;
+
+        const ext = node.name.split('.').pop().toLowerCase();
+        const binaryExts = ['zip', 'rar', 'exe', 'dll', 'bin', 'iso', 'dmg', '7z', 'tar', 'gz', 'mp3', 'wav', 'flac'];
+        if (binaryExts.includes(ext)) {
+            this.closePreview();
+            return;
+        }
+
+        this.currentPreviewId = uuid;
+        document.getElementById('dashboard-view').classList.add('preview-open');
+        pane.classList.remove('hidden');
+        content.classList.remove('empty');
+        
+        title.innerText = node.name;
+        title.title = node.name;
+        
+        if (node.size > 50 * 1024 * 1024) {
+            content.textContent = '';
+            const warnIcon = document.createElement('i');
+            warnIcon.className = 'ph ph-file-dashed text-4xl mb-2 text-warning';
+            const warnMsg = document.createElement('p');
+            warnMsg.textContent = 'File is too large to preview (>50MB).';
+            content.appendChild(warnIcon);
+            content.appendChild(warnMsg);
+            content.classList.add('empty');
+            return;
+        }
+        
+        content.textContent = '';
+        const spinnerIcon = document.createElement('i');
+        spinnerIcon.className = 'ph ph-spinner-gap text-4xl mb-2 text-primary';
+        spinnerIcon.style.animation = 'spin 1s linear infinite';
+        const loadingMsg = document.createElement('p');
+        loadingMsg.textContent = 'Loading preview...';
+        content.appendChild(spinnerIcon);
+        content.appendChild(loadingMsg);
+        content.classList.add('empty');
+
+        try {
+            const res = await this.authFetch('/api/download-ticket', { method: 'POST' });
+            if (!res.ok) throw new Error('Failed to get ticket');
+            const data = await res.json();
+            
+            const url = `/api/preview/${uuid}?ticket=${data.ticket}`;
+            const ext = node.name.split('.').pop().toLowerCase();
+            
+            // Fetch Blob for everything to strictly prevent disk caching
+            const fileRes = await fetch(url);
+            if (this.currentPreviewId !== uuid) return;
+            if (!fileRes.ok) throw new Error('Download failed');
+            
+            const rawBlob = await fileRes.blob();
+            if (this.currentPreviewId !== uuid) return;
+            
+            // Revoke previous blob URL if any
+            if (this._currentBlobUrl) {
+                URL.revokeObjectURL(this._currentBlobUrl);
+            }
+            
+            // Image
+            if (['jpg','jpeg','png','gif','webp','svg'].includes(ext)) {
+                let mimeType = 'image/jpeg';
+                if (ext === 'png') mimeType = 'image/png';
+                else if (ext === 'gif') mimeType = 'image/gif';
+                else if (ext === 'webp') mimeType = 'image/webp';
+                else if (ext === 'svg') mimeType = 'image/svg+xml';
+                
+                const typedBlob = new Blob([rawBlob], { type: mimeType });
+                this._currentBlobUrl = URL.createObjectURL(typedBlob);
+                
+                content.textContent = '';
+                
+                // Create a container with relative positioning
+                const container = document.createElement('div');
+                container.style.position = 'relative';
+                container.style.display = 'inline-block';
+                container.style.maxWidth = '100%';
+                
+                // Overlay to prevent right-click / drag
+                const overlay = document.createElement('div');
+                overlay.style.position = 'absolute';
+                overlay.style.top = '0';
+                overlay.style.left = '0';
+                overlay.style.width = '100%';
+                overlay.style.height = '100%';
+                overlay.style.zIndex = '10';
+                overlay.oncontextmenu = (e) => { e.preventDefault(); return false; };
+                
+                // Create canvas for rendering
+                const canvas = document.createElement('canvas');
+                canvas.style.maxWidth = '100%';
+                canvas.style.display = 'block';
+                canvas.style.margin = '0 auto';
+                canvas.oncontextmenu = (e) => { e.preventDefault(); return false; };
+                
+                const img = new Image();
+                img.onload = () => {
+                    if (this.currentPreviewId !== uuid) return;
+                    canvas.width = img.naturalWidth;
+                    canvas.height = img.naturalHeight;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(img, 0, 0);
+                    // Revoke the blob URL immediately after drawing to completely destroy memory reference
+                    URL.revokeObjectURL(this._currentBlobUrl);
+                    this._currentBlobUrl = null;
+                };
+                img.src = this._currentBlobUrl;
+                
+                container.appendChild(canvas);
+                container.appendChild(overlay);
+                content.appendChild(container);
+                content.classList.remove('empty');
+                return;
+            }
+            
+            // Video
+            if (['mp4','webm','ogg'].includes(ext)) {
+                let mimeType = 'video/mp4';
+                if (ext === 'webm') mimeType = 'video/webm';
+                else if (ext === 'ogg') mimeType = 'video/ogg';
+                
+                const typedBlob = new Blob([rawBlob], { type: mimeType });
+                this._currentBlobUrl = URL.createObjectURL(typedBlob);
+                
+                content.textContent = '';
+                const video = document.createElement('video');
+                video.src = this._currentBlobUrl;
+                video.controls = true;
+                video.autoplay = true;
+                video.loop = true;
+                
+                content.appendChild(video);
+                content.classList.remove('empty');
+                return;
+            }
+
+            const blob = rawBlob;
+            const blobUrl = URL.createObjectURL(blob);
+            this._currentBlobUrl = blobUrl;
+            
+            // PDF
+            if (ext === 'pdf') {
+                content.innerHTML = '';
+                content.classList.remove('empty');
+                
+                try {
+                    const pdf = await pdfjsLib.getDocument({ url: blobUrl, isEvalSupported: false }).promise;
+                    if (this.currentPreviewId !== uuid) return;
+                    
+                    for (let i = 1; i <= pdf.numPages; i++) {
+                        if (this.currentPreviewId !== uuid) return;
+                        const canvas = document.createElement('canvas');
+                        canvas.className = 'w-full max-w-full rounded shadow-md pointer-events-none mb-4 bg-white';
+                        content.appendChild(canvas);
+                        
+                        const page = await pdf.getPage(i);
+                        if (this.currentPreviewId !== uuid) return;
+                        
+                        const viewport = page.getViewport({ scale: 1.5 });
+                        canvas.width = viewport.width;
+                        canvas.height = viewport.height;
+                        
+                        const ctx = canvas.getContext('2d');
+                        await page.render({ canvasContext: ctx, viewport: viewport }).promise;
+                    }
+                } catch (e) {
+                    if (this.currentPreviewId !== uuid) return;
+                    content.textContent = '';
+                    const pdfErrIcon = document.createElement('i');
+                    pdfErrIcon.className = 'ph ph-warning text-4xl mb-2 text-danger';
+                    const pdfErrMsg = document.createElement('p');
+                    pdfErrMsg.textContent = 'Failed to render PDF.';
+                    content.appendChild(pdfErrIcon);
+                    content.appendChild(pdfErrMsg);
+                    content.classList.add('empty');
+                }
+                return;
+            }
+
+            // Markdown
+            if (ext === 'md' || ext === 'markdown') {
+                const text = await blob.text();
+                if (this.currentPreviewId !== uuid) return;
+                if (typeof DOMPurify === 'undefined') {
+                    content.textContent = 'Preview unavailable: Security library not loaded.';
+                    return;
+                }
+                const cleanHtml = DOMPurify.sanitize(marked.parse(text));
+                content.innerHTML = `<div class="preview-markdown">${cleanHtml}</div>`;
+                content.classList.remove('empty');
+                return;
+            }
+            
+            // Text or Binary fallback
+            const slice = blob.slice(0, 4096);
+            const textCheck = await slice.text();
+            if (this.currentPreviewId !== uuid) return;
+            
+            if (textCheck.indexOf('\0') !== -1) {
+                // Binary detected, quietly close preview
+                this.closePreview();
+                return;
+            } else {
+                // Text
+                const fullText = await blob.text();
+                if (this.currentPreviewId !== uuid) return;
+                content.textContent = '';
+                const preDiv = document.createElement('div');
+                preDiv.className = 'preview-text';
+                preDiv.textContent = fullText;
+                content.appendChild(preDiv);
+                content.classList.remove('empty');
+            }
+
+        } catch (error) {
+            content.textContent = '';
+            const errIcon = document.createElement('i');
+            errIcon.className = 'ph ph-warning text-4xl mb-2 text-danger';
+            const errMsg = document.createElement('p');
+            errMsg.textContent = 'Failed to load preview.';
+            content.appendChild(errIcon);
+            content.appendChild(errMsg);
+            content.classList.add('empty');
+        }
+    }
 
     async downloadFile(uuid) {
         try {
